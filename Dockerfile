@@ -7,11 +7,17 @@ FROM node:20-alpine AS builder
 
 WORKDIR /usr/src/app
 
+# Build-time args (non-sensitive). Use EasyPanel/GitHub build-args to set public URLs if desired.
+ARG NEXT_PUBLIC_SUPABASE_URL
+# Tornar disponível durante o build para que o frontend (Vite) injete a variável pública no bundle
+ENV NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+
 # Instalar dependências necessárias para build (inclui devDependencies)
-# Definir variável para aceitar peer deps legacy e usar no install
+# Aceitar peer deps legacy quando necessário
 ENV NPM_CONFIG_LEGACY_PEER_DEPS=1
 COPY package.json package-lock.json* ./
-RUN npm install --legacy-peer-deps
+# Use npm ci when package-lock.json exists for reproducible build, fallback to npm install
+RUN if [ -f package-lock.json ]; then npm ci --legacy-peer-deps; else npm install --legacy-peer-deps; fi
 
 # Copiar todo o código e gerar build do frontend (Vite)
 COPY . .
@@ -29,10 +35,10 @@ WORKDIR /usr/src/app
 ENV NODE_ENV=production
 
 # Instalar apenas dependências de produção
-# Copiar somente package.json para evitar que package-lock com devDeps cause conflitos
-COPY package.json ./
-# Use --legacy-peer-deps para evitar falhas por peer-dependency durante install em build de imagem
-RUN npm install --omit=dev --legacy-peer-deps
+# Copiar package.json e package-lock.json se existir, para instalar de forma reprodutível
+COPY package.json package-lock.json* ./
+# Instalação reproducível em produção quando possível
+RUN if [ -f package-lock.json ]; then npm ci --omit=dev --legacy-peer-deps; else npm install --omit=dev --legacy-peer-deps; fi
 
 # Copiar artefatos do build e arquivos do servidor
 COPY --from=builder /usr/src/app/dist ./dist

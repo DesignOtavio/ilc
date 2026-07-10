@@ -1,0 +1,22 @@
+# Ignore local environment and secrets
+.env
+.env.*
+
+# Node
+node_modules/
+
+# Build output
+dist/
+
+# Git
+.git
+
+# OS / Editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
