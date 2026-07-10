@@ -27,8 +27,10 @@ WORKDIR /usr/src/app
 ENV NODE_ENV=production
 
 # Instalar apenas dependências de produção
-COPY package.json package-lock.json* ./
-RUN npm install --omit=dev
+# Copiar somente package.json para evitar que package-lock com devDeps cause conflitos
+COPY package.json ./
+# Use --legacy-peer-deps para evitar falhas por peer-dependency durante install em build de imagem
+RUN npm install --omit=dev --legacy-peer-deps
 
 # Copiar artefatos do build e arquivos do servidor
 COPY --from=builder /usr/src/app/dist ./dist
