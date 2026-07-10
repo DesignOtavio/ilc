@@ -8,8 +8,10 @@ FROM node:18-alpine AS builder
 WORKDIR /usr/src/app
 
 # Instalar dependências necessárias para build (inclui devDependencies)
+# Definir variável para aceitar peer deps legacy e usar no install
+ENV NPM_CONFIG_LEGACY_PEER_DEPS=1
 COPY package.json package-lock.json* ./
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 # Copiar todo o código e gerar build do frontend (Vite)
 COPY . .
