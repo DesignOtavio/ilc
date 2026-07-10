@@ -45,6 +45,7 @@ USER app
 
 # Expor porta e definir variável padrão (pode ser sobrescrita em runtime)
 ENV PORT=3000
+ENV NODE_OPTIONS=--dns-result-order=ipv4first
 EXPOSE 3000
 
 # Healthcheck simples usando Node (verifica /api/health)
