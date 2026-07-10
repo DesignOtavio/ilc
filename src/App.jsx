@@ -79,6 +79,28 @@ function App() {
     }, 5000);
   };
 
+  const parseApiResponse = async (res) => {
+    const text = await res.text();
+
+    if (!text) {
+      return {
+        error: res.ok
+          ? 'Resposta vazia do servidor.'
+          : `Servidor respondeu sem detalhes do erro (${res.status}).`
+      };
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch (err) {
+      return {
+        error: res.ok
+          ? 'Resposta inválida do servidor.'
+          : `Servidor retornou uma resposta inválida (${res.status}). Verifique os logs do backend.`
+      };
+    }
+  };
+
   // Inicializar Aba padrão conforme Perfil
   useEffect(() => {
     if (token && userRole) {
@@ -162,7 +184,7 @@ function App() {
       const res = await fetch(`${API_BASE}/citizen/me`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
       setCitizenData(data);
       setNewNickname(data.profile.username);
@@ -182,7 +204,7 @@ function App() {
         },
         body: JSON.stringify({ nickname: newNickname })
       });
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
 
       setUsername(data.nickname);
@@ -201,7 +223,7 @@ function App() {
       const res = await fetch(`${API_BASE}/admin/metrics`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
       setAdminMetrics(data);
     } catch (err) {
@@ -215,7 +237,7 @@ function App() {
       const res = await fetch(url, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
       setAdminCitizens(data.citizens);
       setAdminTiers(data.tiers);
@@ -230,7 +252,7 @@ function App() {
       const res = await fetch(`${API_BASE}/admin/citizens/${id}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
       setDetailCitizenData(data);
     } catch (err) {
@@ -243,7 +265,7 @@ function App() {
       const res = await fetch(`${API_BASE}/admin/event-types`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (res.ok) setEventTypes(data);
     } catch (err) {
       console.error(err);
@@ -255,7 +277,7 @@ function App() {
       const res = await fetch(`${API_BASE}/admin/certificates`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (res.ok) setCertificatesList(data);
     } catch (err) {
       console.error(err);
@@ -267,7 +289,7 @@ function App() {
       const res = await fetch(`${API_BASE}/admin/audit-logs`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
       setAuditLogs(data);
     } catch (err) {
@@ -299,7 +321,7 @@ function App() {
           status: quickApproveDirect ? 'approved' : 'pending'
         })
       });
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
 
       showToast('Lançamento Registrado', data.message, 'success');
@@ -327,7 +349,7 @@ function App() {
           password: createPassword
         })
       });
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
 
       showToast('Indexado com Sucesso', data.message, 'success');
@@ -352,7 +374,7 @@ function App() {
         },
         body: JSON.stringify({ status })
       });
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
 
       showToast('Status Alterado', data.message, 'success');
@@ -376,7 +398,7 @@ function App() {
           certificate_id: detailCertId
         })
       });
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
 
       showToast('Certificado Outorgado', data.message, 'success');
@@ -397,7 +419,7 @@ function App() {
         },
         body: JSON.stringify({ status: action })
       });
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
 
       showToast('Evento Homologado', data.message, 'success');
@@ -417,7 +439,7 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier: loginId, password: loginPass })
       });
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
 
       saveSession(data.token, data.role, data.username);
@@ -440,7 +462,7 @@ function App() {
           password: regPass
         })
       });
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
 
       saveSession(data.token, data.role, data.username);
@@ -467,7 +489,7 @@ function App() {
           username: googleNickname
         })
       });
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
 
       setGoogleModalActive(false);
@@ -507,7 +529,7 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier: id, password })
       });
-      const data = await res.json();
+      const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
 
       setDetailCitizenId(null); // Fecha ficha detalhe se aberta
@@ -642,7 +664,7 @@ function App() {
         <div className={`modal-overlay ${googleModalActive ? 'active' : ''}`}>
           <div className="modal-card">
             <h2 className="modal-title">COMPLETAR CADASTRO CÍVICO GOOGLE</h2>
-            <p class="modal-desc">Escolha um nickname único no Estado para concluir o seu cadastro cívico pelo Google.</p>
+            <p className="modal-desc">Escolha um nickname único no Estado para concluir o seu cadastro cívico pelo Google.</p>
             <form onSubmit={handleGoogleSignupSubmit}>
               <div className="form-group">
                 <label>NICKNAME CÍVICO *</label>
@@ -650,7 +672,7 @@ function App() {
               </div>
               <div className="form-buttons">
                 <button type="button" className="state-btn secondary" onClick={() => setGoogleModalActive(false)}>CANCELAR</button>
-                <button type="submit" class="state-btn primary gold-glow">FINALIZAR ADESÃO</button>
+                <button type="submit" className="state-btn primary gold-glow">FINALIZAR ADESÃO</button>
               </div>
             </form>
           </div>

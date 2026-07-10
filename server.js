@@ -131,8 +131,15 @@ pool.connect((err, client, release) => {
   }
   console.log('🏛️ Conectado com sucesso ao Supabase/PostgreSQL.');
   release();
-  initializeDatabase();
+  ensureSchemaMigrations().then(initializeDatabase).catch((migrationErr) => {
+    console.error('❌ Falha ao aplicar migrações de schema:', migrationErr.message);
+  });
 });
+
+async function ensureSchemaMigrations() {
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255) UNIQUE');
+  await pool.query('ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL');
+}
 
 // Inicialização e Carga Base de Usuários (Se necessário)
 async function initializeDatabase() {
