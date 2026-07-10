@@ -1,50 +1,50 @@
-# ==========================================
-# DOCKERFILE PARA DEPLOY ESTATAL (EASYPANEL)
-# ==========================================
+# Multi-stage Dockerfile otimizado para deploy em VPS (produção)
 
-# Estágio 1: Build do frontend (Vite/React)
+# ------------------------
+# Stage: builder (build do frontend)
+# ------------------------
 FROM node:18-alpine AS builder
 
 WORKDIR /usr/src/app
 
-# Copiar manifesto de dependências
-COPY package.json ./
-
-# Instalar TODAS as dependências (incluindo devDependencies para o build do Vite)
+# Instalar dependências necessárias para build (inclui devDependencies)
+COPY package.json package-lock.json* ./
 RUN npm install
 
-# Copiar todo o código fonte
+# Copiar todo o código e gerar build do frontend (Vite)
 COPY . .
-
-# Gerar o build de produção do React (saída em /dist)
 RUN npm run build
 
-# ==========================================
-# Estágio 2: Runner final leve
-# ==========================================
+
+# ------------------------
+# Stage: runner (imagem final leve)
+# ------------------------
 FROM node:18-alpine AS runner
 
 WORKDIR /usr/src/app
 
-# Copiar apenas o package.json para instalar dependências de produção
-COPY package.json ./
+# Definir ambiente de produção
+ENV NODE_ENV=production
+
+# Instalar apenas dependências de produção
+COPY package.json package-lock.json* ./
 RUN npm install --omit=dev
 
-# Copiar o servidor Express
-COPY server.js ./
-
-# Copiar os SQL seeds (usados em runtime para init do banco)
-COPY SQL/ ./SQL/
-
-# Copiar o build do React gerado no estágio anterior
+# Copiar artefatos do build e arquivos do servidor
 COPY --from=builder /usr/src/app/dist ./dist
+COPY --from=builder /usr/src/app/server.js ./server.js
+COPY --from=builder /usr/src/app/SQL ./SQL
 
-# Definir variáveis padrão de produção
-ENV NODE_ENV=production
+# Criar usuário não-root e ajustar permissões
+RUN addgroup -S app && adduser -S app -G app && chown -R app:app /usr/src/app
+USER app
+
+# Expor porta e definir variável padrão (pode ser sobrescrita em runtime)
 ENV PORT=3000
-
-# Porta exposta do container
 EXPOSE 3000
 
-# Comando para iniciar o servidor Express (que serve o dist/ estático)
+# Healthcheck simples usando Node (verifica /api/health)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD node -e "require('http').get('http://localhost:'+ (process.env.PORT||3000) +'/api/health', res=>{if(res.statusCode===200) process.exit(0); else process.exit(1)}).on('error',()=>process.exit(1))"
+
+# Iniciar o servidor Express
 CMD ["node", "server.js"]
