@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "ui-ux-pro-max-skill": {
+      "source": "dokhacgiakhoa/antigravity-ide",
+      "sourceType": "github",
+      "skillPath": ".agent/skills/ui-ux-pro-max-skill/SKILL.md",
+      "computedHash": "602fef23961bc16579463d0629433d70f337c54fa674267fea0bad1abba9e53f"
+    }
+  }
+}

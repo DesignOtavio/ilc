@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login do Cidadão — Índice de Lealdade Cívica (ILC)</title>
+  <!-- Google Fonts para tipografia estatal cívica -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Bebas+Neue&family=Inter:wght@300;400;500;600&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <!-- SIMULADOR DE AMBIENTE (Barra superior para testes rápidos) -->
+  <div id="sim-toolbar" class="sim-toolbar">
+    <div class="sim-brand">
+      <span class="sim-tag">AMBIENTE DE TESTE CÍVICO</span>
+    </div>
+    <div class="sim-actions">
+      <span class="sim-label">Acesso rápido:</span>
+      <button class="sim-btn admin" onclick="window.simLogin('comissario_otavio', 'admin123')">Admin</button>
+      <button class="sim-btn operator" onclick="window.simLogin('operador_civil', 'operator123')">Operador</button>
+      <button class="sim-btn auditor" onclick="window.simLogin('auditor_pátria', 'auditor123')">Auditor</button>
+      <button class="sim-btn citizen-high" onclick="window.simLogin('mariana_souza', 'cidadao123')">Cidadão (Alto
+        Comando)</button>
+      <button class="sim-btn citizen-mid" onclick="window.simLogin('joao_silva', 'cidadao123')">Cidadão (Comum)</button>
+      <button class="sim-btn citizen-low" onclick="window.simLogin('carlos_antunes', 'cidadao123')">Cidadão
+        (Vigilância)</button>
+    </div>
+  </div>
+
+  <!-- CONTAINER DE NOTIFICAÇÕES (Toasts do Estado) -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- TELA DE LOGIN & CADASTRO -->
+  <div id="auth-screen" class="screen active">
+    <div class="auth-card">
+      <div class="state-seal-wrapper">
+        <!-- Brasão Oficial SVG -->
+        <svg class="state-seal" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="45" stroke="#B08A47" stroke-width="2" fill="none" stroke-dasharray="3,3" />
+          <circle cx="50" cy="50" r="40" stroke="#5C4B2A" stroke-width="1" fill="none" />
+          <path d="M50,15 L53,28 L66,28 L56,36 L59,49 L50,41 L41,49 L44,36 L34,28 L47,28 Z" fill="#B08A47" />
+          <!-- Louros -->
+          <path d="M25,65 Q20,50 25,35 Q30,50 25,65 Z" fill="#556B2F" opacity="0.6" />
+          <path d="M75,65 Q80,50 75,35 Q70,50 75,65 Z" fill="#556B2F" opacity="0.6" />
+          <text x="50" y="70" text-anchor="middle" font-family="Bebas Neue" font-size="12" fill="#D4C08A"
+            letter-spacing="1">ILC</text>
+        </svg>
+      </div>
+
+      <h1 class="state-title">LOGIN DO CIDADÃO</h1>
+      <p class="state-subtitle">PÁTRIA • ORDEM • LEALDADE</p>
+      <p class="auth-helper">Insira seus dados para autenticação no Painel Central do Índice de Lealdade Cívica.</p>
+
+      <!-- Abas Auth (Login / Cadastro) -->
+      <div class="auth-tabs">
+        <button id="tab-login-btn" class="auth-tab active" onclick="switchAuthTab('login')">ENTRAR</button>
+        <button id="tab-register-btn" class="auth-tab" onclick="switchAuthTab('register')">REGISTRAR</button>
+      </div>
+
+      <!-- Formulário de Login -->
+      <form id="login-form" class="auth-form active" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label for="login-id">IDENTIFICADOR CÍVICO</label>
+          <input type="text" id="login-id" placeholder="Nickname, e-mail ou celular" required autocomplete="username">
+          <span class="field-desc">E-mail, celular com DDI ou seu nickname registrado.</span>
+        </div>
+        <div class="form-group">
+          <label for="login-pass">SENHA DE ACESSO</label>
+          <input type="password" id="login-pass" placeholder="••••••••" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="state-btn primary gold-glow">AUTENTICAR IDENTIDADE</button>
+      </form>
+
+      <!-- Formulário de Registro -->
+      <form id="register-form" class="auth-form" onsubmit="handleRegister(event)">
+        <div class="form-group">
+          <label for="reg-username">NICKNAME ÚNICO *</label>
+          <input type="text" id="reg-username" placeholder="ex: cidadao_exemplar" required autocomplete="username">
+          <span class="field-desc">Pode ser alterado depois. Deve ser único no Estado.</span>
+        </div>
+        <div class="form-group">
+          <label for="reg-email">E-MAIL (OPCIONAL)</label>
+          <input type="email" id="reg-email" placeholder="cidadao@pátria.gov.br" autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label for="reg-celular">NÚMERO DE CELULAR (OPCIONAL)</label>
+          <input type="text" id="reg-celular" placeholder="+5511999999999" autocomplete="tel">
+        </div>
+        <div class="form-group">
+          <label for="reg-pass">SENHA DE ACESSO *</label>
+          <input type="password" id="reg-pass" placeholder="Mínimo 6 caracteres" required autocomplete="new-password">
+        </div>
+        <button type="submit" class="state-btn success success-glow">SOLICITAR REGISTRO CÍVICO</button>
+      </form>
+
+      <!-- Divisor -->
+      <div class="auth-divider">
+        <span>OU ACESSE VIA REDE ESTATAL</span>
+      </div>
+
+      <!-- Login Social Mock -->
+      <button class="state-btn google-btn" onclick="triggerGoogleSignup()">
+        <svg class="google-icon" viewBox="0 0 24 24">
+          <path fill="#EA4335"
+            d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.111 4.114a5.772 5.772 0 0 1-5.776-5.773 5.772 5.772 0 0 1 5.776-5.773c1.554 0 2.98.544 4.103 1.442l3.1-3.1C19.146 3.498 15.93 2.1 12.24 2.1 6.812 2.1 2.4 6.512 2.4 11.94s4.412 9.84 9.84 9.84c6.262 0 9.774-4.32 9.774-9.774 0-.616-.055-1.222-.164-1.72H12.24z" />
+        </svg>
+        CONECTAR COM A CONTA GOOGLE
+      </button>
+    </div>
+  </div>
+
+  <!-- DIALOG DE COMPLETAR DADOS DO GOOGLE -->
+  <div id="google-nickname-modal" class="modal-overlay">
+    <div class="modal-card">
+      <h2 class="modal-title">COMPLETAR CADASTRO CÍVICO GOOGLE</h2>
+      <p class="modal-desc">Você foi autenticado via Google. Para registrar seus pontos no banco central, escolha um
+        nickname único no sistema.</p>
+
+      <form id="google-nickname-form" onsubmit="submitGoogleSignup(event)">
+        <div class="form-group">
+          <label for="google-username">NICKNAME CÍVICO *</label>
+          <input type="text" id="google-username" required placeholder="ex: otavio_cidadania">
+          <span class="field-desc">Este nome identificará suas ações cívicas.</span>
+        </div>
+        <div class="form-buttons">
+          <button type="button" class="state-btn secondary"
+            onclick="closeModal('google-nickname-modal')">CANCELAR</button>
+          <button type="submit" class="state-btn primary gold-glow">FINALIZAR ADESÃO</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ESTRUTURA PRINCIPAL DO SISTEMA (APÓS LOGIN) -->
+  <div id="app-container" class="app-container">
+
+    <!-- CABEÇALHO OFICIAL -->
+    <header class="main-header">
+      <div class="header-identity">
+        <!-- Brasão Oficial SVG Pequeno -->
+        <svg class="header-logo" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="45" stroke="#B08A47" stroke-width="2" fill="none" />
+          <path d="M50,20 L53,33 L66,33 L56,41 L59,54 L50,46 L41,54 L44,41 L34,33 L47,33 Z" fill="#B08A47" />
+          <path d="M25,65 Q20,50 25,35" stroke="#556B2F" stroke-width="2" fill="none" />
+          <path d="M75,65 Q80,50 75,35" stroke="#556B2F" stroke-width="2" fill="none" />
+        </svg>
+        <div class="header-titles">
+          <h1>REPUBLICA CÍVICA NACIONAL</h1>
+          <h2>SISTEMA OFICIAL DE MONITORAMENTO DE LEALDADE (ILC)</h2>
+        </div>
+      </div>
+      <div class="header-user-info">
+        <div class="user-meta">
+          <span id="session-username" class="session-name">Carregando...</span>
+          <span id="session-role" class="session-badge">Citizen</span>
+        </div>
+        <button class="state-btn outline logout-btn" onclick="handleLogout()">LOGOUT</button>
+      </div>
+    </header>
+
+    <!-- NAVEGAÇÃO DE ABAS (DINÂMICA DE ACORDO COM O PERFIL) -->
+    <nav class="main-nav">
+      <!-- Abas do Cidadão -->
+      <div id="citizen-tabs" class="nav-group active">
+        <button class="nav-tab active" onclick="switchTab('cit-dashboard')">MEU PERFIL CÍVICO</button>
+        <button class="nav-tab" onclick="switchTab('cit-certificates')">MEUS CERTIFICADOS</button>
+        <button class="nav-tab" onclick="switchTab('cit-history')">HISTÓRICO DE AÇÕES</button>
+        <button class="nav-tab" onclick="switchTab('cit-settings')">CONFIGURAÇÕES</button>
+      </div>
+      <!-- Abas do Admin -->
+      <div id="admin-tabs" class="nav-group">
+        <button class="nav-tab active" onclick="switchTab('adm-dashboard')">PAINEL ADMINISTRATIVO</button>
+        <button class="nav-tab" onclick="switchTab('adm-citizens')">LISTA DE CIDADÃOS</button>
+        <button class="nav-tab" onclick="switchTab('adm-approvals')">APROVAÇÕES PENDENTES</button>
+        <button class="nav-tab" onclick="switchTab('adm-audit')">LOGS DE AUDITORIA</button>
+      </div>
+    </nav>
+
+    <!-- ÁREA DE CONTEÚDO PRINCIPAL -->
+    <main class="main-content">
+
+      <!-- ========================================== -->
+      <!-- TELA 1: DASHBOARD DO CIDADÃO               -->
+      <!-- ========================================== -->
+      <section id="tab-cit-dashboard" class="tab-pane active">
+        <div class="bento-grid">
+
+          <!-- CARTÃO CÍVICO INDIVIDUAL (Aparência Cédula Oficial) -->
+          <div class="bento-card col-4 credential-card-wrapper">
+            <div class="credential-card gold-border">
+              <div class="card-bg-pattern"></div>
+              <div class="card-header">
+                <span class="card-estatal-text">MINISTÉRIO DA INTEGRAÇÃO CÍVICA</span>
+                <span class="card-serial" id="cit-card-serial">ID: E-48392-A</span>
+              </div>
+              <div class="card-body">
+                <div class="card-photo-box">
+                  <!-- Avatar oficial estilo sépia/verde -->
+                  <div class="cit-avatar-placeholder"></div>
+                </div>
+                <div class="card-details">
+                  <div class="detail-row">
+                    <span class="label">CIDADÃO</span>
+                    <span class="value" id="cit-card-name">João Silva</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="label">NICKNAME</span>
+                    <span class="value text-gold" id="cit-card-nick">joao_silva</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="label">STATUS CIVIL</span>
+                    <span class="value status-active" id="cit-card-status">ATIVO</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="label">FAIXA ILC</span>
+                    <span class="value tier-badge" id="cit-card-tier" style="background-color: var(--olive)">Cidadão
+                      Exemplar</span>
+                  </div>
+                </div>
+              </div>
+              <div class="card-footer">
+                <div class="score-display">
+                  <span class="score-label">PONTUAÇÃO ATUAL ILC</span>
+                  <span class="score-number font-hero success-glow" id="cit-card-score">5.000</span>
+                </div>
+                <div class="card-barcode">|||| | ||| | || |||| | ||| ||||</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- PROGRESSO DA PRÓXIMA FAIXA -->
+          <div class="bento-card col-4 flex-col justify-between">
+            <div class="card-head">
+              <h3 class="card-title">EVOLUÇÃO DA CLASSIFICAÇÃO</h3>
+              <p class="card-subtitle">Barra de progresso cívico estatal para a próxima patente.</p>
+            </div>
+
+            <div class="progress-section">
+              <div class="progress-labels">
+                <span id="current-tier-lbl">Cidadão Comum</span>
+                <span id="next-tier-lbl">Cidadão Exemplar</span>
+              </div>
+              <div class="progress-bar-track">
+                <div id="cit-progress-bar" class="progress-bar-fill" style="width: 50%"></div>
+              </div>
+              <p class="progress-help" id="cit-progress-help">Faltam 1.000 pontos para a próxima faixa.</p>
+            </div>
+
+            <div class="tier-info-panel">
+              <h4 class="tier-info-title text-gold">PRIVILÉGIOS DA FAIXA ATUAL:</h4>
+              <p id="cit-tier-privileges" class="tier-info-desc">Direitos de tráfego normais, acesso a linhas de crédito
+                convencionais e serviços públicos regulares.</p>
+            </div>
+          </div>
+
+          <!-- GRÁFICO DE EVOLUÇÃO (Canvas) -->
+          <div class="bento-card col-5 chart-card">
+            <div class="card-head">
+              <h3 class="card-title">HISTOGRAMA DE COMPORTAMENTO CÍVICO</h3>
+              <p class="card-subtitle">Evolução temporal da sua pontuação nas últimas 5 atividades registradas.</p>
+            </div>
+            <div class="chart-container">
+              <canvas id="cit-score-chart"></canvas>
+            </div>
+          </div>
+
+          <!-- RECOMENDAÇÕES PARA SUBIR SCORE -->
+          <div class="bento-card col-3">
+            <div class="card-head">
+              <h3 class="card-title">FORTALECIMENTO DO SCORE</h3>
+              <p class="card-subtitle">Ações patrióticas recomendadas para ganho de méritos.</p>
+            </div>
+            <div class="recommendations-list" id="cit-recommendations">
+              <!-- Renderizado via JS -->
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- TELA 2: CERTIFICADOS DO CIDADÃO           -->
+      <!-- ========================================== -->
+      <section id="tab-cit-certificates" class="tab-pane">
+        <div class="section-heading">
+          <h2 class="section-title">CÉDULAS DE MÉRITO NACIONAL</h2>
+          <p class="section-subtitle">Títulos comemorativos outorgados pelo Estado por sua dedicação cívica acumulada.
+          </p>
+        </div>
+        <div class="certificates-grid" id="cit-certificates-list">
+          <!-- Cédulas de papel-moeda renderizadas via JS -->
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- TELA 3: HISTÓRICO DO CIDADÃO               -->
+      <!-- ========================================== -->
+      <section id="tab-cit-history" class="tab-pane">
+        <div class="section-heading">
+          <h2 class="section-title">CRONOLOGIA DE COMPORTAMENTO</h2>
+          <p class="section-subtitle">Linha do tempo oficial de todos os eventos de bônus, penalidades e serviços
+            prestados.</p>
+        </div>
+        <div class="table-container">
+          <table class="state-table">
+            <thead>
+              <tr>
+                <th>DATA DO EVENTO</th>
+                <th>CATEGORIA</th>
+                <th>TIPO DE ATIVIDADE</th>
+                <th>VARIAÇÃO</th>
+                <th>DESCRIÇÃO/EVIDÊNCIA</th>
+                <th>STATUS</th>
+              </tr>
+            </thead>
+            <tbody id="cit-history-table-body">
+              <!-- Renderizado via JS -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- TELA 4: CONFIGURAÇÕES DO CIDADÃO          -->
+      <!-- ========================================== -->
+      <section id="tab-cit-settings" class="tab-pane">
+        <div class="section-heading">
+          <h2 class="section-title">CONFIGURAÇÕES DE IDENTIDADE</h2>
+          <p class="section-subtitle">Gerencie seus identificadores civis. Lembre-se que nicknames devem ser únicos.</p>
+        </div>
+        <div class="bento-grid">
+          <div class="bento-card col-4">
+            <h3 class="card-title">ALTERAR COGNOME (NICKNAME)</h3>
+            <form onsubmit="handleUpdateNickname(event)" class="form-dense">
+              <div class="form-group">
+                <label for="settings-nick">NICKNAME ATUAL / NOVO</label>
+                <input type="text" id="settings-nick" required placeholder="Novo nickname">
+                <span class="field-desc">ATENÇÃO: A alteração gerará um log de auditoria permanente no sistema.</span>
+              </div>
+              <button type="submit" class="state-btn primary gold-glow">SALVAR NICKNAME</button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- ========================================== -->
+      <!-- TELA 5: DASHBOARD DO ADMIN                 -->
+      <!-- ========================================== -->
+      <section id="tab-adm-dashboard" class="tab-pane">
+        <!-- Grid de Métricas Principais -->
+        <div class="stats-row">
+          <div class="stat-card">
+            <span class="stat-label">POPULAÇÃO CÍVICA MONITORADA</span>
+            <span class="stat-value font-hero text-gold" id="adm-metric-citizens">0</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">MÉDIA NACIONAL DO ILC</span>
+            <span class="stat-value font-hero text-success" id="adm-metric-avg">0.0</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">CIDADÃOS EM ALERTA VERMELHO</span>
+            <span class="stat-value font-hero text-warning" id="adm-metric-alerts">0</span>
+          </div>
+        </div>
+
+        <div class="bento-grid">
+          <!-- Gráfico de Dispersão de Faixas -->
+          <div class="bento-card col-4">
+            <h3 class="card-title">DISTRIBUIÇÃO DEMOGRÁFICA POR FAIXAS</h3>
+            <p class="card-subtitle">Divisão da população cívica de acordo com o nível de lealdade.</p>
+            <div class="tiers-distribution-container" id="adm-tiers-dist">
+              <!-- Gráfico de barras horizontais renderizado via JS -->
+            </div>
+          </div>
+
+          <!-- Ações Rápidas -->
+          <div class="bento-card col-4">
+            <h3 class="card-title">LANÇAMENTO RÁPIDO DE EVENTOS</h3>
+            <p class="card-subtitle">Penalize ou bonifique um cidadão instantaneamente.</p>
+
+            <form onsubmit="handleQuickLaunchEvent(event)" class="form-dense">
+              <div class="form-group">
+                <label for="quick-citizen-select">SELECIONAR CIDADÃO *</label>
+                <select id="quick-citizen-select" required>
+                  <option value="">Carregando lista...</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="quick-event-select">ATIVIDADE/TIPO *</label>
+                <select id="quick-event-select" required>
+                  <option value="">Selecione o tipo de evento...</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="quick-description">DESCRIÇÃO DETALHADA / EVIDÊNCIA</label>
+                <textarea id="quick-description" placeholder="Descreva os motivos do lançamento" required></textarea>
+              </div>
+              <div class="form-group">
+                <label for="quick-evidence">URL DO COMPROVANTE (OPCIONAL)</label>
+                <input type="text" id="quick-evidence" placeholder="https://evidencia.ilc.gov/arquivo.pdf">
+              </div>
+              <div class="form-group">
+                <label class="checkbox-container">
+                  <input type="checkbox" id="quick-approve-direct" checked>
+                  Aprovar evento imediatamente (Ignorar fila pendente)
+                </label>
+              </div>
+              <button type="submit" class="state-btn primary gold-glow">PUBLICAR E APLICAR EVENTO</button>
+            </form>
+          </div>
+
+          <!-- Novo Cadastro de Cidadão por Admin -->
+          <div class="bento-card col-4">
+            <h3 class="card-title">INDEXAR NOVO CIDADÃO</h3>
+            <p class="card-subtitle">Cadastre um cidadão na base central cívica.</p>
+
+            <form onsubmit="handleAdminCreateCitizen(event)" class="form-dense">
+              <div class="form-group">
+                <label for="adm-create-username">NICKNAME / COGNOME *</label>
+                <input type="text" id="adm-create-username" required placeholder="ex: lucas_silveira">
+              </div>
+              <div class="form-group">
+                <label for="adm-create-email">E-MAIL *</label>
+                <input type="email" id="adm-create-email" required placeholder="email@provedor.com">
+              </div>
+              <div class="form-group">
+                <label for="adm-create-celular">TELEFONE CELULAR</label>
+                <input type="text" id="adm-create-celular" placeholder="+5511988887777">
+              </div>
+              <div class="form-group">
+                <label for="adm-create-password">SENHA TEMPORÁRIA *</label>
+                <input type="password" id="adm-create-password" required placeholder="Senha inicial">
+              </div>
+              <button type="submit" class="state-btn success success-glow">CADASTRAR CIDADÃO</button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- TELA 6: LISTA DE CIDADÃOS                  -->
+      <!-- ========================================== -->
+      <section id="tab-adm-citizens" class="tab-pane">
+        <div class="section-heading">
+          <h2 class="section-title">BASE CENTRAL DE CIDADÃOS</h2>
+          <p class="section-subtitle">Consulte fichas individuais, altere privilégios e verifique histórico de
+            pontuação.</p>
+        </div>
+
+        <!-- Filtros e Busca -->
+        <div class="filters-row">
+          <div class="filter-group search">
+            <input type="text" id="search-citizen-input" placeholder="Pesquisar por nome, e-mail ou celular..."
+              oninput="filterCitizensList()">
+          </div>
+          <div class="filter-group">
+            <select id="filter-status-select" onchange="filterCitizensList()">
+              <option value="">Todos os Status</option>
+              <option value="active">Ativo</option>
+              <option value="blocked">Bloqueado</option>
+              <option value="inactive">Inativo</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <select id="filter-tier-select" onchange="filterCitizensList()">
+              <option value="">Todas as Faixas</option>
+              <option value="Vigilância Máxima">Vigilância Máxima</option>
+              <option value="Restrito">Restrito</option>
+              <option value="Cidadão Comum">Cidadão Comum</option>
+              <option value="Cidadão Exemplar">Cidadão Exemplar</option>
+              <option value="Herói Cívico">Herói Cívico</option>
+              <option value="Alto Comando Honorário">Alto Comando Honorário</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Ficha de Tabela de Cidadãos -->
+        <div class="table-container">
+          <table class="state-table">
+            <thead>
+              <tr>
+                <th>NICKNAME</th>
+                <th>CONTATO</th>
+                <th>ILC ATUAL</th>
+                <th>FAIXA</th>
+                <th>STATUS</th>
+                <th>MÉRITOS</th>
+                <th>PENALIDADES</th>
+                <th>ÚLTIMA ATUALIZAÇÃO</th>
+                <th>AÇÕES</th>
+              </tr>
+            </thead>
+            <tbody id="adm-citizens-table-body">
+              <!-- Renderizado via JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Paginação -->
+        <div class="pagination" id="adm-citizens-pagination">
+          <!-- Renderizado via JS -->
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- TELA DETALHADA DO CIDADÃO (VISÃO ADMIN)    -->
+      <!-- ========================================== -->
+      <section id="tab-adm-citizen-detail" class="tab-pane">
+        <button class="state-btn outline back-btn" onclick="backToCitizensList()">← VOLTAR PARA A LISTA</button>
+
+        <div class="bento-grid" style="margin-top: 20px;">
+
+          <!-- Painel Esquerdo: Ficha e Ações Rápidas -->
+          <div class="bento-card col-4">
+            <h3 class="card-title">FICHA DE CONTROLE CÍVICO</h3>
+            <div id="detail-citizen-info">
+              <!-- Renderizado via JS -->
+            </div>
+
+            <div class="action-divider">MODIFICAR PRIVILÉGIO</div>
+            <div class="status-actions">
+              <button class="state-btn success" onclick="changeCitizenStatus('active')">ATIVAR CONTA</button>
+              <button class="state-btn warning" onclick="changeCitizenStatus('blocked')">BLOQUEAR ACESSO</button>
+            </div>
+          </div>
+
+          <!-- Linha do tempo e Histograma -->
+          <div class="bento-card col-8">
+            <h3 class="card-title">EVOLUÇÃO HISTÓRICA DO CIDADÃO</h3>
+            <div class="chart-container" style="height: 180px; margin-bottom: 20px;">
+              <canvas id="detail-score-chart"></canvas>
+            </div>
+
+            <div class="action-divider">OUTORGAR CERTIFICADO MANUALMENTE</div>
+            <div class="manual-cert-row">
+              <select id="detail-cert-select">
+                <option value="">Selecione um certificado...</option>
+              </select>
+              <button class="state-btn primary gold-glow" onclick="handleGrantManualCertificate()">CONCEDER
+                TÍTULO</button>
+            </div>
+
+            <h3 class="card-title" style="margin-top: 30px;">CRONOLOGIA DO CIDADÃO</h3>
+            <div class="table-container">
+              <table class="state-table">
+                <thead>
+                  <tr>
+                    <th>DATA</th>
+                    <th>TIPO</th>
+                    <th>PONTOS</th>
+                    <th>DESCRIÇÃO</th>
+                    <th>STATUS</th>
+                    <th>OPERADOR</th>
+                  </tr>
+                </thead>
+                <tbody id="detail-history-table-body">
+                  <!-- Renderizado via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- TELA 7: APROVAÇÕES PENDENTES               -->
+      <!-- ========================================== -->
+      <section id="tab-adm-approvals" class="tab-pane">
+        <div class="section-heading">
+          <h2 class="section-title">FILA CENTRAL DE APROVAÇÕES</h2>
+          <p class="section-subtitle">Revise denúncias e concessões especiais de mérito enviadas por operadores antes de
+            aplicar a pontuação.</p>
+        </div>
+
+        <div class="table-container">
+          <table class="state-table">
+            <thead>
+              <tr>
+                <th>DATA DE LANÇAMENTO</th>
+                <th>CIDADÃO AFETADO</th>
+                <th>TIPO DE ATIVIDADE</th>
+                <th>PONTUAÇÃO</th>
+                <th>DESCRIÇÃO/MOTIVOS</th>
+                <th>EVIDÊNCIA</th>
+                <th>AÇÕES</th>
+              </tr>
+            </thead>
+            <tbody id="adm-approvals-table-body">
+              <!-- Renderizado via JS -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- TELA 8: LOGS DE AUDITORIA                  -->
+      <!-- ========================================== -->
+      <section id="tab-adm-audit" class="tab-pane">
+        <div class="section-heading">
+          <h2 class="section-title">AUDITORIA DOS REGISTROS ESTATAIS</h2>
+          <p class="section-subtitle">Histórico técnico e imutável de todas as ações de administradores e atualizações
+            cívicas.</p>
+        </div>
+
+        <div class="table-container">
+          <table class="state-table font-mono">
+            <thead>
+              <tr>
+                <th>DATA E HORA</th>
+                <th>AUTOR DA AÇÃO</th>
+                <th>ENTIDADE AFETADA</th>
+                <th>TIPO DE AÇÃO</th>
+                <th>DADOS ANTERIORES</th>
+                <th>DADOS ATUAIS</th>
+              </tr>
+            </thead>
+            <tbody id="adm-audit-table-body">
+              <!-- Renderizado via JS -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+
+</html>
