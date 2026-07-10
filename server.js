@@ -70,55 +70,86 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   }));
 
   // Callback do Google após autenticação
-  app.get('/api/auth/google/callback',
-    passport.authenticate('google', { session: false, failureRedirect: '/?google_error=1' }),
-    async (req, res) => {
-      const { google_id, email } = req.user;
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
+  async function handleGoogleCallback(req, res) {
+    const { google_id, email } = req.user;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-        // Verificar se já existe conta com esse google_id
-        let userRes = await client.query(
-          `SELECT u.id, u.username, r.name as role
-           FROM users u
-           JOIN user_roles ur ON u.id = ur.user_id
-           JOIN roles r ON ur.role_id = r.id
-           WHERE u.google_id = $1`,
-          [google_id]
-        );
+      // Verificar se já existe conta com esse google_id
+      let userRes = await client.query(
+        `SELECT u.id, u.username, r.name as role
+         FROM users u
+         JOIN user_roles ur ON u.id = ur.user_id
+         JOIN roles r ON ur.role_id = r.id
+         WHERE u.google_id = $1`,
+        [google_id]
+      );
 
-        if (userRes.rows.length > 0) {
-          // Conta existente — login direto
-          const user = userRes.rows[0];
-          const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '8h' });
-          await client.query('COMMIT');
-          // Redirecionar com token na URL (frontend captura e armazena)
-          return res.redirect(`/?google_token=${token}&google_role=${user.role}&google_username=${encodeURIComponent(user.username)}`);
+      if (userRes.rows.length > 0) {
+        // Conta existente — login direto
+        const user = userRes.rows[0];
+        const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '8h' });
+        await client.query('COMMIT');
+        // Redirecionar com token na URL (frontend captura e armazena)
+        return res.redirect(`/?google_token=${token}&google_role=${user.role}&google_username=${encodeURIComponent(user.username)}`);
+      }
+
+      // Verificar se e-mail já existe em outra conta
+      if (email) {
+        const emailCheck = await client.query('SELECT id FROM users WHERE email = $1 AND google_id IS NULL', [email]);
+        if (emailCheck.rows.length > 0) {
+          await client.query('ROLLBACK');
+          return res.redirect('/?google_error=email_exists');
         }
+      }
 
-        // Verificar se e-mail já existe em outra conta
-        if (email) {
-          const emailCheck = await client.query('SELECT id FROM users WHERE email = $1 AND google_id IS NULL', [email]);
-          if (emailCheck.rows.length > 0) {
-            await client.query('ROLLBACK');
-            return res.redirect('/?google_error=email_exists');
+      // Nova conta — redirecionar para completar cadastro com nickname
+      await client.query('COMMIT');
+      const tempToken = jwt.sign({ google_id, email, needs_nickname: true }, JWT_SECRET, { expiresIn: '15m' });
+      return res.redirect(`/?google_new=1&google_temp=${tempToken}`);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('Erro no callback Google OAuth:', err.message);
+      return res.redirect('/?google_error=server');
+    } finally {
+      client.release();
+    }
+  }
+
+  app.get('/api/auth/google/callback', (req, res, next) => {
+    passport.authenticate('google', { session: false }, async (err, user, info) => {
+      if (err) {
+        // Log detalhado do erro de token/fluxo OAuth
+        console.error('OAuth token exchange error:', err && err.message);
+        if (err.oauthError) {
+          try {
+            console.error('oauthError status:', err.oauthError.statusCode || err.oauthError.status);
+            // oauthError may contain data/body
+            if (err.oauthError.data) console.error('oauthError.data:', err.oauthError.data.toString());
+            if (err.oauthError.body) console.error('oauthError.body:', err.oauthError.body.toString());
+          } catch (logErr) {
+            console.error('Failed to log oauthError details:', logErr.message);
           }
         }
-
-        // Nova conta — redirecionar para completar cadastro com nickname
-        await client.query('COMMIT');
-        const tempToken = jwt.sign({ google_id, email, needs_nickname: true }, JWT_SECRET, { expiresIn: '15m' });
-        return res.redirect(`/?google_new=1&google_temp=${tempToken}`);
-      } catch (err) {
-        await client.query('ROLLBACK');
-        console.error('Erro no callback Google OAuth:', err.message);
         return res.redirect('/?google_error=server');
-      } finally {
-        client.release();
       }
-    }
-  );
+
+      if (!user) {
+        console.warn('OAuth callback: no user from passport, info:', info);
+        return res.redirect('/?google_error=1');
+      }
+
+      // Attach user and call the main handler
+      req.user = user;
+      try {
+        await handleGoogleCallback(req, res);
+      } catch (handlerErr) {
+        console.error('Error handling Google callback:', handlerErr.message);
+        return res.redirect('/?google_error=server');
+      }
+    })(req, res, next);
+  });
 } else {
   console.warn('⚠️  GOOGLE_CLIENT_ID/SECRET não configurados. Login com Google desabilitado.');
 }
