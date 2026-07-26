@@ -56,11 +56,12 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     callbackURL: process.env.GOOGLE_CALLBACK_URL || '/api/auth/google/callback'
   }, async (accessToken, refreshToken, profile, done) => {
-    // Apenas passamos o perfil do Google para o callback handler
+    const avatar_url = profile.photos && profile.photos[0] ? profile.photos[0].value : (profile._json && profile._json.picture ? profile._json.picture : null);
     return done(null, {
       google_id: profile.id,
       email: profile.emails && profile.emails[0] ? profile.emails[0].value : null,
-      name: profile.displayName
+      name: profile.displayName,
+      avatar_url
     });
   }));
 
@@ -71,14 +72,14 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 
   // Callback do Google após autenticação
   async function handleGoogleCallback(req, res) {
-    const { google_id, email } = req.user;
+    const { google_id, email, avatar_url } = req.user;
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
       // Verificar se já existe conta com esse google_id
       let userRes = await client.query(
-        `SELECT u.id, u.username, r.name as role
+        `SELECT u.id, u.username, u.hierarchy_title, u.avatar_url, r.name as role
          FROM users u
          JOIN user_roles ur ON u.id = ur.user_id
          JOIN roles r ON ur.role_id = r.id
@@ -87,11 +88,21 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       );
 
       if (userRes.rows.length > 0) {
-        // Conta existente — login direto
+        // Conta existente — atualizar foto se veio do Google
         const user = userRes.rows[0];
-        const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '8h' });
+        let currentAvatar = user.avatar_url;
+
+        if (avatar_url && (!currentAvatar || currentAvatar.includes('googleusercontent.com'))) {
+          await client.query('UPDATE users SET avatar_url = $1 WHERE id = $2', [avatar_url, user.id]);
+          currentAvatar = avatar_url;
+        }
+
+        const token = jwt.sign(
+          { id: user.id, username: user.username, role: user.role, hierarchy_title: user.hierarchy_title || 'Usuário', avatar_url: currentAvatar },
+          JWT_SECRET,
+          { expiresIn: '8h' }
+        );
         await client.query('COMMIT');
-        // Redirecionar com token na URL (frontend captura e armazena)
         return res.redirect(`/?google_token=${token}&google_role=${user.role}&google_username=${encodeURIComponent(user.username)}`);
       }
 
@@ -106,7 +117,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 
       // Nova conta — redirecionar para completar cadastro com nickname
       await client.query('COMMIT');
-      const tempToken = jwt.sign({ google_id, email, needs_nickname: true }, JWT_SECRET, { expiresIn: '15m' });
+      const tempToken = jwt.sign({ google_id, email, avatar_url, needs_nickname: true }, JWT_SECRET, { expiresIn: '15m' });
       return res.redirect(`/?google_new=1&google_temp=${tempToken}`);
     } catch (err) {
       await client.query('ROLLBACK');
@@ -120,18 +131,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   app.get('/api/auth/google/callback', (req, res, next) => {
     passport.authenticate('google', { session: false }, async (err, user, info) => {
       if (err) {
-        // Log detalhado do erro de token/fluxo OAuth
         console.error('OAuth token exchange error:', err && err.message);
-        if (err.oauthError) {
-          try {
-            console.error('oauthError status:', err.oauthError.statusCode || err.oauthError.status);
-            // oauthError may contain data/body
-            if (err.oauthError.data) console.error('oauthError.data:', err.oauthError.data.toString());
-            if (err.oauthError.body) console.error('oauthError.body:', err.oauthError.body.toString());
-          } catch (logErr) {
-            console.error('Failed to log oauthError details:', logErr.message);
-          }
-        }
         return res.redirect('/?google_error=server');
       }
 
@@ -140,7 +140,6 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
         return res.redirect('/?google_error=1');
       }
 
-      // Attach user and call the main handler
       req.user = user;
       try {
         await handleGoogleCallback(req, res);
@@ -170,13 +169,47 @@ pool.connect((err, client, release) => {
 async function ensureSchemaMigrations() {
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255) UNIQUE');
   await pool.query('ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL');
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS hierarchy_title VARCHAR(150) DEFAULT \'Usuário\'');
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT');
+  
+  try {
+    await pool.query('ALTER TABLE roles ALTER COLUMN name TYPE VARCHAR(50)');
+  } catch (e) {
+    // Ignora se for enum ou já alterado
+  }
+
+  await pool.query("INSERT INTO roles (name, description) VALUES ('admin', 'Acesso administrativo total ao sistema') ON CONFLICT DO NOTHING");
+  await pool.query("INSERT INTO roles (name, description) VALUES ('usuario', 'Acesso padrão de usuário/cidadão ao sistema') ON CONFLICT DO NOTHING");
+
+  const usuarioRoleRes = await pool.query("SELECT id FROM roles WHERE name = 'usuario'");
+  if (usuarioRoleRes.rows.length > 0) {
+    const usuarioRoleId = usuarioRoleRes.rows[0].id;
+    await pool.query(`
+      UPDATE users u
+      SET hierarchy_title = CASE 
+        WHEN r.name = 'operator' AND (u.hierarchy_title IS NULL OR u.hierarchy_title = 'Usuário') THEN 'Operador de Campo'
+        WHEN r.name = 'auditor' AND (u.hierarchy_title IS NULL OR u.hierarchy_title = 'Usuário') THEN 'Auditor Cívico'
+        WHEN r.name = 'citizen' AND (u.hierarchy_title IS NULL OR u.hierarchy_title = 'Usuário') THEN 'Cidadão Cívico'
+        WHEN r.name = 'admin' AND (u.hierarchy_title IS NULL OR u.hierarchy_title = 'Usuário') THEN 'Comissário Chefe'
+        ELSE COALESCE(u.hierarchy_title, 'Usuário')
+      END
+      FROM user_roles ur
+      JOIN roles r ON ur.role_id = r.id
+      WHERE u.id = ur.user_id AND r.name IN ('operator', 'auditor', 'citizen', 'admin')
+    `);
+
+    await pool.query(`
+      UPDATE user_roles
+      SET role_id = $1
+      WHERE role_id IN (SELECT id FROM roles WHERE name IN ('operator', 'auditor', 'citizen'))
+    `, [usuarioRoleId]);
+  }
 }
 
 // Inicialização e Carga Base de Usuários (Se necessário)
 async function initializeDatabase() {
   const client = await pool.connect();
   try {
-    // Verificar se já temos usuários no banco
     const res = await client.query('SELECT COUNT(*) FROM users');
     const userCount = parseInt(res.rows[0].count, 10);
 
@@ -185,66 +218,40 @@ async function initializeDatabase() {
       await client.query('BEGIN');
 
       const adminRoleId = (await client.query("SELECT id FROM roles WHERE name = 'admin'")).rows[0].id;
-      const operatorRoleId = (await client.query("SELECT id FROM roles WHERE name = 'operator'")).rows[0].id;
-      const auditorRoleId = (await client.query("SELECT id FROM roles WHERE name = 'auditor'")).rows[0].id;
-      const citizenRoleId = (await client.query("SELECT id FROM roles WHERE name = 'citizen'")).rows[0].id;
+      const usuarioRoleId = (await client.query("SELECT id FROM roles WHERE name = 'usuario'")).rows[0].id;
 
-      // Senhas criptografadas
       const adminPass = await bcrypt.hash('admin123', 10);
-      const operatorPass = await bcrypt.hash('operator123', 10);
-      const auditorPass = await bcrypt.hash('auditor123', 10);
-      const citizenPass = await bcrypt.hash('cidadao123', 10);
+      const userPass = await bcrypt.hash('usuario123', 10);
 
       // 1. Cadastrar Administrador
       const adminRes = await client.query(
-        `INSERT INTO users (username, email, celular, password_hash)
-         VALUES ('comissario_otavio', 'admin@ilc.gov', '+5511999999999', $1) RETURNING id`,
+        `INSERT INTO users (username, email, celular, password_hash, hierarchy_title, avatar_url)
+         VALUES ('comissario_otavio', 'admin@ilc.gov', '+5511999999999', $1, 'Comissário Chefe', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300') RETURNING id`,
         [adminPass]
       );
       const adminId = adminRes.rows[0].id;
       await client.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)', [adminId, adminRoleId]);
       await client.query('INSERT INTO score_accounts (user_id, current_score) VALUES ($1, 9500)', [adminId]);
 
-      // 2. Cadastrar Operador
-      const operatorRes = await client.query(
-        `INSERT INTO users (username, email, celular, password_hash)
-         VALUES ('operador_civil', 'operator@ilc.gov', '+5511888888888', $1) RETURNING id`,
-        [operatorPass]
-      );
-      const operatorId = operatorRes.rows[0].id;
-      await client.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)', [operatorId, operatorRoleId]);
-      await client.query('INSERT INTO score_accounts (user_id, current_score) VALUES ($1, 7500)', [operatorId]);
-
-      // 3. Cadastrar Auditor
-      const auditorRes = await client.query(
-        `INSERT INTO users (username, email, celular, password_hash)
-         VALUES ('auditor_pátria', 'auditor@ilc.gov', '+5511777777777', $1) RETURNING id`,
-        [auditorPass]
-      );
-      const auditorId = auditorRes.rows[0].id;
-      await client.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)', [auditorId, auditorRoleId]);
-      await client.query('INSERT INTO score_accounts (user_id, current_score) VALUES ($1, 6200)', [auditorId]);
-
-      // 4. Cadastrar Cidadãos de Demonstração
-      const citizens = [
-        { name: 'joao_silva', email: 'joao.silva@cidadania.br', phone: '+5511911112222', score: 5000 },
-        { name: 'elena_rostova', email: 'elena.rostova@cidadania.br', phone: '+5511922223333', score: 8200 },
-        { name: 'carlos_antunes', email: 'carlos.antunes@cidadania.br', phone: '+5511933334444', score: 1200 },
-        { name: 'mariana_souza', email: 'mariana.souza@cidadania.br', phone: '+5511944445555', score: 9600 },
-        { name: 'ricardo_lima', email: 'ricardo.lima@cidadania.br', phone: '+5511955556666', score: 3400 }
+      // 2. Cadastrar Usuários de Demonstração com Títulos Personalizados
+      const demoUsers = [
+        { name: 'operador_civil', email: 'operator@ilc.gov', phone: '+5511888888888', score: 7500, title: 'Operador de Campo', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300' },
+        { name: 'auditor_patria', email: 'auditor@ilc.gov', phone: '+5511777777777', score: 6200, title: 'Auditor Cívico Sênior', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=300' },
+        { name: 'joao_silva', email: 'joao.silva@cidadania.br', phone: '+5511911112222', score: 5000, title: 'Cidadão Ativo', avatar: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=300' },
+        { name: 'elena_rostova', email: 'elena.rostova@cidadania.br', phone: '+5511922223333', score: 8200, title: 'Inspetora Comunitária', avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=300' },
+        { name: 'carlos_antunes', email: 'carlos.antunes@cidadania.br', phone: '+5511933334444', score: 1200, title: 'Cidadão sob Observação', avatar: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=300' }
       ];
 
-      for (const cit of citizens) {
+      for (const cit of demoUsers) {
         const uRes = await client.query(
-          `INSERT INTO users (username, email, celular, password_hash)
-           VALUES ($1, $2, $3, $4) RETURNING id`,
-          [cit.name, cit.email, cit.phone, citizenPass]
+          `INSERT INTO users (username, email, celular, password_hash, hierarchy_title, avatar_url)
+           VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+          [cit.name, cit.email, cit.phone, userPass, cit.title, cit.avatar]
         );
         const uId = uRes.rows[0].id;
-        await client.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)', [uId, citizenRoleId]);
+        await client.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)', [uId, usuarioRoleId]);
         await client.query('INSERT INTO score_accounts (user_id, current_score) VALUES ($1, $2)', [uId, cit.score]);
 
-        // Adicionar um evento histórico inicial para justificar a pontuação
         const eventTypeRes = await client.query(
           "SELECT id, points_delta FROM score_event_types WHERE code = 'servico_militar'"
         );
@@ -256,7 +263,6 @@ async function initializeDatabase() {
             [uId, type.id, cit.score - 5000, adminId]
           );
 
-          // Verificar certificados para pontos iniciais
           if (cit.score - 5000 > 0) {
             const certs = await client.query("SELECT id FROM merit_certificates WHERE points_required <= $1", [cit.score - 5000]);
             for (const cert of certs.rows) {
@@ -297,7 +303,21 @@ function authenticateToken(req, res, next) {
 
 function requireRole(allowedRoles) {
   return (req, res, next) => {
-    if (!req.user || !allowedRoles.includes(req.user.role)) {
+    if (!req.user) {
+      return res.status(403).json({ error: 'Você não tem permissão cívica para acessar este recurso.' });
+    }
+    const userRole = req.user.role;
+    if (userRole === 'admin') {
+      return next();
+    }
+
+    const isAllowed = allowedRoles.some(r => {
+      if (r === userRole) return true;
+      if (['usuario', 'user', 'citizen', 'operator', 'auditor'].includes(r) && userRole === 'usuario') return true;
+      return false;
+    });
+
+    if (!isAllowed) {
       return res.status(403).json({ error: 'Você não tem permissão cívica para acessar este recurso.' });
     }
     next();
@@ -380,11 +400,7 @@ async function applyScoreChange(client, userId, pointsDelta, actorId) {
 }
 
 
-// ==========================================
-// ROTAS DE AUTENTICAÇÃO (API)
-// ==========================================
-
-// Registrar cidadão comum
+// ======// Registrar cidadão comum
 app.post('/api/auth/register', async (req, res) => {
   const { username, email, celular, password } = req.body;
 
@@ -415,19 +431,23 @@ app.post('/api/auth/register', async (req, res) => {
     }
 
     const passwordHash = password ? await bcrypt.hash(password, 10) : null;
+    const defaultTitle = 'Cidadão Cívico';
 
     // Criar Usuário
     const userInsert = await client.query(
-      `INSERT INTO users (username, email, celular, password_hash, status)
-       VALUES ($1, $2, $3, $4, 'active') RETURNING id`,
-      [username, email || null, celular || null, passwordHash]
+      `INSERT INTO users (username, email, celular, password_hash, hierarchy_title, status)
+       VALUES ($1, $2, $3, $4, $5, 'active') RETURNING id`,
+      [username, email || null, celular || null, passwordHash, defaultTitle]
     );
     const userId = userInsert.rows[0].id;
 
-    // Associar papel citizen
-    const roleRes = await client.query("SELECT id FROM roles WHERE name = 'citizen'");
-    const citizenRoleId = roleRes.rows[0].id;
-    await client.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)', [userId, citizenRoleId]);
+    // Associar papel base 'usuario'
+    let roleRes = await client.query("SELECT id FROM roles WHERE name = 'usuario'");
+    if (roleRes.rows.length === 0) {
+      roleRes = await client.query("SELECT id FROM roles WHERE name = 'citizen'");
+    }
+    const usuarioRoleId = roleRes.rows[0].id;
+    await client.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)', [userId, usuarioRoleId]);
 
     // Inicializar conta de pontos (5.000 pontos padrão)
     await client.query('INSERT INTO score_accounts (user_id, started_score, current_score) VALUES ($1, 5000, 5000)', [userId]);
@@ -436,14 +456,18 @@ app.post('/api/auth/register', async (req, res) => {
     await client.query(
       `INSERT INTO audit_logs (actor_user_id, entity_name, entity_id, action, new_data)
        VALUES ($1, 'users', $2, 'citizen_self_register', $3)`,
-      [userId, userId, JSON.stringify({ username, email, celular })]
+      [userId, userId, JSON.stringify({ username, email, celular, hierarchy_title: defaultTitle })]
     );
 
     await client.query('COMMIT');
 
     // Gerar Token
-    const token = jwt.sign({ id: userId, username, email, role: 'citizen' }, JWT_SECRET, { expiresIn: '8h' });
-    res.json({ token, role: 'citizen', username });
+    const token = jwt.sign(
+      { id: userId, username, email, role: 'usuario', hierarchy_title: defaultTitle, avatar_url: null },
+      JWT_SECRET,
+      { expiresIn: '8h' }
+    );
+    res.json({ token, role: 'usuario', username, hierarchy_title: defaultTitle, avatar_url: null });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: 'Falha ao registrar cidadão: ' + err.message });
@@ -454,10 +478,9 @@ app.post('/api/auth/register', async (req, res) => {
 
 // Completar Cadastro via Google (aceita temp_token do callback OAuth ou dados diretos)
 app.post('/api/auth/google-signup', async (req, res) => {
-  let google_id, email;
+  let google_id, email, avatar_url;
   const { temp_token, username } = req.body;
 
-  // Fluxo real OAuth: verifica o token temporário gerado no callback
   if (temp_token) {
     try {
       const decoded = jwt.verify(temp_token, JWT_SECRET);
@@ -466,13 +489,14 @@ app.post('/api/auth/google-signup', async (req, res) => {
       }
       google_id = decoded.google_id;
       email = decoded.email;
+      avatar_url = decoded.avatar_url;
     } catch (err) {
       return res.status(401).json({ error: 'Token temporário expirado ou inválido. Inicie o processo novamente.' });
     }
   } else {
-    // Fluxo legado (não-OAuth): aceita google_id/email direto
     google_id = req.body.google_id;
     email = req.body.email;
+    avatar_url = req.body.avatar_url;
   }
 
   if (!google_id) {
@@ -487,9 +511,8 @@ app.post('/api/auth/google-signup', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Verificar se já existe por google_id (login direto)
     let userRes = await client.query(
-      `SELECT u.id, u.username, r.name as role
+      `SELECT u.id, u.username, u.hierarchy_title, u.avatar_url, r.name as role
        FROM users u
        JOIN user_roles ur ON u.id = ur.user_id
        JOIN roles r ON ur.role_id = r.id
@@ -499,12 +522,15 @@ app.post('/api/auth/google-signup', async (req, res) => {
 
     if (userRes.rows.length > 0) {
       const user = userRes.rows[0];
-      const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '8h' });
+      const token = jwt.sign(
+        { id: user.id, username: user.username, role: user.role, hierarchy_title: user.hierarchy_title || 'Usuário', avatar_url: user.avatar_url },
+        JWT_SECRET,
+        { expiresIn: '8h' }
+      );
       await client.query('COMMIT');
-      return res.json({ token, role: user.role, username: user.username });
+      return res.json({ token, role: user.role, username: user.username, hierarchy_title: user.hierarchy_title || 'Usuário', avatar_url: user.avatar_url });
     }
 
-    // Verificar nickname único
     const checkNickname = await client.query('SELECT id FROM users WHERE username = $1', [username]);
     if (checkNickname.rows.length > 0) {
       return res.status(400).json({ error: 'Nickname indisponível. Escolha outro.' });
@@ -517,33 +543,37 @@ app.post('/api/auth/google-signup', async (req, res) => {
       }
     }
 
-    // Inserir usuário
+    const defaultTitle = 'Cidadão Cívico';
     const uInsert = await client.query(
-      `INSERT INTO users (username, email, google_id, status)
-       VALUES ($1, $2, $3, 'active') RETURNING id`,
-      [username, email || null, google_id]
+      `INSERT INTO users (username, email, google_id, hierarchy_title, avatar_url, status)
+       VALUES ($1, $2, $3, $4, $5, 'active') RETURNING id`,
+      [username, email || null, google_id, defaultTitle, avatar_url || null]
     );
     const userId = uInsert.rows[0].id;
 
-    // Associar papel citizen
-    const roleRes = await client.query("SELECT id FROM roles WHERE name = 'citizen'");
-    const citizenRoleId = roleRes.rows[0].id;
-    await client.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)', [userId, citizenRoleId]);
+    let roleRes = await client.query("SELECT id FROM roles WHERE name = 'usuario'");
+    if (roleRes.rows.length === 0) {
+      roleRes = await client.query("SELECT id FROM roles WHERE name = 'citizen'");
+    }
+    const usuarioRoleId = roleRes.rows[0].id;
+    await client.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)', [userId, usuarioRoleId]);
 
-    // Criar score account (5000)
     await client.query('INSERT INTO score_accounts (user_id, current_score) VALUES ($1, 5000)', [userId]);
 
-    // Audit
     await client.query(
       `INSERT INTO audit_logs (actor_user_id, entity_name, entity_id, action, new_data)
        VALUES ($1, 'users', $2, 'google_signup', $3)`,
-      [userId, userId, JSON.stringify({ username, email, google_id })]
+      [userId, userId, JSON.stringify({ username, email, google_id, avatar_url, hierarchy_title: defaultTitle })]
     );
 
     await client.query('COMMIT');
 
-    const token = jwt.sign({ id: userId, username, role: 'citizen' }, JWT_SECRET, { expiresIn: '8h' });
-    res.json({ token, role: 'citizen', username });
+    const token = jwt.sign(
+      { id: userId, username, role: 'usuario', hierarchy_title: defaultTitle, avatar_url: avatar_url || null },
+      JWT_SECRET,
+      { expiresIn: '8h' }
+    );
+    res.json({ token, role: 'usuario', username, hierarchy_title: defaultTitle, avatar_url: avatar_url || null });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: 'Falha ao cadastrar via Google: ' + err.message });
@@ -590,13 +620,22 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Credenciais cívicas inválidas.' });
     }
 
+    const userRole = user.role_name === 'admin' ? 'admin' : 'usuario';
+    const hierarchyTitle = user.hierarchy_title || (userRole === 'admin' ? 'Administrador do Sistema' : 'Usuário Cívico');
+
     const token = jwt.sign(
-      { id: user.id, username: user.username, email: user.email, role: user.role_name },
+      { id: user.id, username: user.username, email: user.email, role: userRole, hierarchy_title: hierarchyTitle, avatar_url: user.avatar_url },
       JWT_SECRET,
       { expiresIn: '8h' }
     );
 
-    res.json({ token, role: user.role_name, username: user.username });
+    res.json({
+      token,
+      role: userRole,
+      username: user.username,
+      hierarchy_title: hierarchyTitle,
+      avatar_url: user.avatar_url
+    });
   } catch (err) {
     res.status(500).json({ error: 'Erro no servidor durante login: ' + err.message });
   }
@@ -604,45 +643,46 @@ app.post('/api/auth/login', async (req, res) => {
 
 
 // ==========================================
-// ROTAS DO CIDADÃO (API)
+// ROTAS DO CIDADÃO / USUÁRIO (API)
 // ==========================================
 
 // Obter dados do cidadão autenticado
-app.get('/api/citizen/me', authenticateToken, requireRole(['citizen', 'admin', 'operator', 'auditor']), async (req, res) => {
+app.get('/api/citizen/me', authenticateToken, requireRole(['usuario', 'admin']), async (req, res) => {
   try {
     const citizenId = req.user.id;
 
-    // Obter dados básicos e pontuação
     const citizenRes = await pool.query(
-      `SELECT u.id, u.username, u.email, u.celular, u.status, sa.current_score
+      `SELECT u.id, u.username, u.email, u.celular, u.status, u.hierarchy_title, u.avatar_url, r.name as role
        FROM users u
-       JOIN score_accounts sa ON u.id = sa.user_id
+       JOIN user_roles ur ON u.id = ur.user_id
+       JOIN roles r ON ur.role_id = r.id
        WHERE u.id = $1`,
       [citizenId]
     );
 
     if (citizenRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Cidadão não encontrado.' });
+      return res.status(404).json({ error: 'Usuário não encontrado.' });
     }
 
     const citizen = citizenRes.rows[0];
 
-    // Obter faixa com base na pontuação atual
-    const score = citizen.current_score;
+    // Obter pontuação
+    const scoreRes = await pool.query('SELECT current_score FROM score_accounts WHERE user_id = $1', [citizenId]);
+    const score = scoreRes.rows.length > 0 ? scoreRes.rows[0].current_score : 5000;
+    citizen.current_score = score;
+
     const tierRes = await pool.query(
       `SELECT * FROM score_tiers WHERE min_score <= $1 AND max_score >= $2`,
       [score, score]
     );
     const tier = tierRes.rows[0] || null;
 
-    // Obter a próxima faixa disponível (para barra de progresso)
     const nextTierRes = await pool.query(
       `SELECT * FROM score_tiers WHERE min_score > $1 ORDER BY min_score ASC LIMIT 1`,
       [score]
     );
     const nextTier = nextTierRes.rows[0] || null;
 
-    // Obter certificados
     const certsRes = await pool.query(
       `SELECT mc.*, uc.granted_at 
        FROM user_certificates uc
@@ -651,7 +691,6 @@ app.get('/api/citizen/me', authenticateToken, requireRole(['citizen', 'admin', '
       [citizenId]
     );
 
-    // Obter histórico de eventos
     const eventsRes = await pool.query(
       `SELECT se.id, se.points_delta, se.description, se.status, se.occurred_at, sety.name as type_name, sety.category
        FROM score_events se
@@ -673,50 +712,70 @@ app.get('/api/citizen/me', authenticateToken, requireRole(['citizen', 'admin', '
   }
 });
 
-// Alterar nickname
-app.put('/api/citizen/update-nickname', authenticateToken, async (req, res) => {
-  const { nickname } = req.body;
-  if (!nickname || nickname.trim() === '') {
-    return res.status(400).json({ error: 'O novo nickname não pode ser vazio.' });
-  }
+// Alterar Perfil (Nickname, Avatar/Foto da Carteira ou Título)
+app.put('/api/citizen/update-profile', authenticateToken, async (req, res) => {
+  const { nickname, avatar_url, hierarchy_title } = req.body;
+  const userId = req.user.id;
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    // Verificar se já existe
-    const dupRes = await client.query('SELECT id FROM users WHERE username = $1 AND id <> $2', [nickname, req.user.id]);
-    if (dupRes.rows.length > 0) {
-      return res.status(400).json({ error: 'Este nickname já está em uso por outro cidadão.' });
+    // Se forneceu nickname, validar unicidade
+    if (nickname && nickname.trim() !== '') {
+      const dupRes = await client.query('SELECT id FROM users WHERE username = $1 AND id <> $2', [nickname.trim(), userId]);
+      if (dupRes.rows.length > 0) {
+        return res.status(400).json({ error: 'Este nickname já está em uso por outro cidadão.' });
+      }
+      await client.query('UPDATE users SET username = $1 WHERE id = $2', [nickname.trim(), userId]);
     }
 
-    // Obter nickname anterior
-    const oldRes = await client.query('SELECT username FROM users WHERE id = $1', [req.user.id]);
-    const oldNickname = oldRes.rows[0].username;
+    if (avatar_url !== undefined) {
+      await client.query('UPDATE users SET avatar_url = $1 WHERE id = $2', [avatar_url || null, userId]);
+    }
 
-    // Atualizar
-    await client.query('UPDATE users SET username = $1, updated_at = NOW() WHERE id = $2', [nickname, req.user.id]);
+    if (hierarchy_title !== undefined && hierarchy_title.trim() !== '') {
+      await client.query('UPDATE users SET hierarchy_title = $1 WHERE id = $2', [hierarchy_title.trim(), userId]);
+    }
 
-    // Registrar auditoria
+    await client.query('UPDATE users SET updated_at = NOW() WHERE id = $2', [userId]);
+
     await client.query(
-      `INSERT INTO audit_logs (actor_user_id, entity_name, entity_id, action, old_data, new_data)
-       VALUES ($1, 'users', $2, 'update_nickname', $3, $4)`,
-      [
-        req.user.id,
-        req.user.id,
-        JSON.stringify({ nickname: oldNickname }),
-        JSON.stringify({ nickname })
-      ]
+      `INSERT INTO audit_logs (actor_user_id, entity_name, entity_id, action, new_data)
+       VALUES ($1, 'users', $2, 'update_user_profile', $3)`,
+      [userId, userId, JSON.stringify({ nickname, avatar_url: avatar_url ? 'updated' : 'unchanged', hierarchy_title })]
     );
 
     await client.query('COMMIT');
-    res.json({ success: true, message: 'Nickname cívico atualizado com sucesso.', nickname });
+
+    const updatedUserRes = await pool.query(
+      `SELECT u.username, u.hierarchy_title, u.avatar_url, r.name as role
+       FROM users u
+       JOIN user_roles ur ON u.id = ur.user_id
+       JOIN roles r ON ur.role_id = r.id
+       WHERE u.id = $1`,
+      [userId]
+    );
+    const updated = updatedUserRes.rows[0];
+
+    res.json({
+      success: true,
+      message: 'Perfil e Carteira de Identidade Cívica atualizados com sucesso.',
+      nickname: updated.username,
+      hierarchy_title: updated.hierarchy_title,
+      avatar_url: updated.avatar_url
+    });
   } catch (err) {
     await client.query('ROLLBACK');
-    res.status(500).json({ error: 'Erro ao atualizar nickname: ' + err.message });
+    res.status(500).json({ error: 'Erro ao atualizar perfil: ' + err.message });
   } finally {
     client.release();
   }
+});
+
+// Retrocompatibilidade para antiga rota update-nickname
+app.put('/api/citizen/update-nickname', authenticateToken, async (req, res) => {
+  return app._router.handle({ ...req, url: '/api/citizen/update-profile', method: 'PUT' }, res);
 });
 
 
@@ -725,29 +784,14 @@ app.put('/api/citizen/update-nickname', authenticateToken, async (req, res) => {
 // ==========================================
 
 // Métricas Gerais do Dashboard do Admin
-app.get('/api/admin/metrics', authenticateToken, requireRole(['admin', 'operator', 'auditor']), async (req, res) => {
+app.get('/api/admin/metrics', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
-    // Total de cidadãos
-    const citizenRoleRes = await pool.query("SELECT id FROM roles WHERE name = 'citizen'");
-    const citizenRoleId = citizenRoleRes.rows[0].id;
-
-    const countRes = await pool.query(
-      'SELECT COUNT(*) FROM user_roles WHERE role_id = $1',
-      [citizenRoleId]
-    );
+    const countRes = await pool.query('SELECT COUNT(*) FROM users');
     const totalCitizens = parseInt(countRes.rows[0].count, 10);
 
-    // Média de pontuação
-    const avgRes = await pool.query(
-      `SELECT AVG(sa.current_score) as avg_score 
-       FROM score_accounts sa
-       JOIN user_roles ur ON sa.user_id = ur.user_id
-       WHERE ur.role_id = $1`,
-      [citizenRoleId]
-    );
+    const avgRes = await pool.query('SELECT AVG(current_score) as avg_score FROM score_accounts');
     const averageScore = parseFloat(avgRes.rows[0].avg_score || 0).toFixed(1);
 
-    // Distribuição por Faixa
     const distRes = await pool.query(`
       SELECT 
         t.name as tier_name, 
@@ -755,12 +799,10 @@ app.get('/api/admin/metrics', authenticateToken, requireRole(['admin', 'operator
         COUNT(sa.id) as count
       FROM score_tiers t
       LEFT JOIN score_accounts sa ON sa.current_score BETWEEN t.min_score AND t.max_score
-      LEFT JOIN user_roles ur ON sa.user_id = ur.user_id AND ur.role_id = $1
       GROUP BY t.id, t.name, t.color, t.min_score
       ORDER BY t.min_score ASC
-    `, [citizenRoleId]);
+    `);
 
-    // Últimos eventos pendentes
     const pendingEventsRes = await pool.query(`
       SELECT se.id, se.points_delta, se.description, se.created_at, u.username as citizen_name, sety.name as type_name
       FROM score_events se
@@ -771,12 +813,7 @@ app.get('/api/admin/metrics', authenticateToken, requireRole(['admin', 'operator
       LIMIT 10
     `);
 
-    // Quantidade de alertas (ex: pessoas na faixa de vigilância máxima)
-    const alertRes = await pool.query(`
-      SELECT COUNT(*) FROM score_accounts sa
-      JOIN user_roles ur ON sa.user_id = ur.user_id
-      WHERE ur.role_id = $1 AND sa.current_score < 2000
-    `, [citizenRoleId]);
+    const alertRes = await pool.query('SELECT COUNT(*) FROM score_accounts WHERE current_score < 2000');
 
     res.json({
       total_citizens: totalCitizens,
@@ -790,30 +827,29 @@ app.get('/api/admin/metrics', authenticateToken, requireRole(['admin', 'operator
   }
 });
 
-// Listagem de Cidadãos com filtros
-app.get('/api/admin/citizens', authenticateToken, requireRole(['admin', 'operator', 'auditor']), async (req, res) => {
+// Listagem de Usuários com filtros
+app.get('/api/admin/citizens', authenticateToken, requireRole(['admin']), async (req, res) => {
   const { search, status, tier, page = 1, limit = 10 } = req.query;
   const offset = (page - 1) * limit;
 
   try {
-    const citizenRoleRes = await pool.query("SELECT id FROM roles WHERE name = 'citizen'");
-    const citizenRoleId = citizenRoleRes.rows[0].id;
-
     let query = `
-      SELECT u.id, u.username, u.email, u.celular, u.status, sa.current_score, sa.updated_at,
+      SELECT u.id, u.username, u.email, u.celular, u.status, u.hierarchy_title, u.avatar_url, r.name as role_name,
+             COALESCE(sa.current_score, 5000) as current_score, sa.updated_at,
              (SELECT COUNT(*) FROM score_events WHERE user_id = u.id AND points_delta > 0 AND status = 'approved') as rewards_count,
              (SELECT COUNT(*) FROM score_events WHERE user_id = u.id AND points_delta < 0 AND status = 'approved') as penalties_count
       FROM users u
-      JOIN user_roles ur ON u.id = ur.user_id
-      JOIN score_accounts sa ON u.id = sa.user_id
-      WHERE ur.role_id = $1
+      LEFT JOIN user_roles ur ON u.id = ur.user_id
+      LEFT JOIN roles r ON ur.role_id = r.id
+      LEFT JOIN score_accounts sa ON u.id = sa.user_id
+      WHERE 1=1
     `;
 
-    const params = [citizenRoleId];
-    let paramCounter = 2;
+    const params = [];
+    let paramCounter = 1;
 
     if (search) {
-      query += ` AND (u.username ILIKE $${paramCounter} OR u.email ILIKE $${paramCounter} OR u.celular ILIKE $${paramCounter})`;
+      query += ` AND (u.username ILIKE $${paramCounter} OR u.email ILIKE $${paramCounter} OR u.celular ILIKE $${paramCounter} OR u.hierarchy_title ILIKE $${paramCounter})`;
       params.push(`%${search}%`);
       paramCounter++;
     }
@@ -834,18 +870,14 @@ app.get('/api/admin/citizens', authenticateToken, requireRole(['admin', 'operato
       }
     }
 
-    // Contagem total para paginação
     const countQuery = `SELECT COUNT(*) FROM (${query}) as list`;
     const countRes = await pool.query(countQuery, params);
     const totalCount = parseInt(countRes.rows[0].count, 10);
 
-    // Adicionar paginação
-    query += ` ORDER BY sa.current_score DESC LIMIT $${paramCounter} OFFSET $${paramCounter + 1}`;
+    query += ` ORDER BY COALESCE(sa.current_score, 5000) DESC LIMIT $${paramCounter} OFFSET $${paramCounter + 1}`;
     params.push(limit, offset);
 
     const citizensRes = await pool.query(query, params);
-
-    // Carregar todas as faixas para anexar a faixa atual no JS do frontend
     const tiersRes = await pool.query('SELECT * FROM score_tiers');
 
     res.json({
@@ -856,38 +888,39 @@ app.get('/api/admin/citizens', authenticateToken, requireRole(['admin', 'operato
       limit: parseInt(limit, 10)
     });
   } catch (err) {
-    res.status(500).json({ error: 'Erro ao listar cidadãos: ' + err.message });
+    res.status(500).json({ error: 'Erro ao listar usuários: ' + err.message });
   }
 });
 
-// Detalhar Cidadão Individual
-app.get('/api/admin/citizens/:id', authenticateToken, requireRole(['admin', 'operator', 'auditor']), async (req, res) => {
+// Detalhar Usuário Individual
+app.get('/api/admin/citizens/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
   const citizenId = req.params.id;
 
   try {
     const userRes = await pool.query(
-      `SELECT u.id, u.username, u.email, u.celular, u.status, u.created_at, sa.current_score
+      `SELECT u.id, u.username, u.email, u.celular, u.status, u.hierarchy_title, u.avatar_url, u.created_at, r.name as role_name,
+              COALESCE(sa.current_score, 5000) as current_score
        FROM users u
-       JOIN score_accounts sa ON u.id = sa.user_id
+       LEFT JOIN user_roles ur ON u.id = ur.user_id
+       LEFT JOIN roles r ON ur.role_id = r.id
+       LEFT JOIN score_accounts sa ON u.id = sa.user_id
        WHERE u.id = $1`,
       [citizenId]
     );
 
     if (userRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Cidadão não encontrado.' });
+      return res.status(404).json({ error: 'Usuário não encontrado.' });
     }
 
     const citizen = userRes.rows[0];
     const score = citizen.current_score;
 
-    // Faixa atual
     const tierRes = await pool.query(
       'SELECT * FROM score_tiers WHERE min_score <= $1 AND max_score >= $2',
       [score, score]
     );
     const tier = tierRes.rows[0] || null;
 
-    // Histórico de Eventos
     const eventsRes = await pool.query(
       `SELECT se.id, se.points_delta, se.description, se.evidence_url, se.status, se.occurred_at, se.created_at,
              sety.name as type_name, sety.category, u_app.username as approved_by_name
@@ -899,7 +932,6 @@ app.get('/api/admin/citizens/:id', authenticateToken, requireRole(['admin', 'ope
       [citizenId]
     );
 
-    // Certificados concedidos
     const certsRes = await pool.query(
       `SELECT mc.*, uc.granted_at 
        FROM user_certificates uc
@@ -915,13 +947,13 @@ app.get('/api/admin/citizens/:id', authenticateToken, requireRole(['admin', 'ope
       certificates: certsRes.rows
     });
   } catch (err) {
-    res.status(500).json({ error: 'Erro ao buscar detalhe do cidadão: ' + err.message });
+    res.status(500).json({ error: 'Erro ao buscar detalhe do usuário: ' + err.message });
   }
 });
 
-// Cadastrar novo Cidadão pelo Admin
-app.post('/api/admin/citizens', authenticateToken, requireRole(['admin', 'operator']), async (req, res) => {
-  const { username, email, celular, password } = req.body;
+// Cadastrar novo Usuário pelo Admin (com Título Personalizado, Nível e Foto)
+app.post('/api/admin/citizens', authenticateToken, requireRole(['admin']), async (req, res) => {
+  const { username, email, celular, password, role = 'usuario', hierarchy_title, avatar_url } = req.body;
 
   if (!username) {
     return res.status(400).json({ error: 'Nickname é obrigatório.' });
@@ -931,7 +963,6 @@ app.post('/api/admin/citizens', authenticateToken, requireRole(['admin', 'operat
   try {
     await client.query('BEGIN');
 
-    // Validar unicidade
     const dupRes = await client.query('SELECT id FROM users WHERE username = $1', [username]);
     if (dupRes.rows.length > 0) {
       return res.status(400).json({ error: 'Nickname já registrado.' });
@@ -951,43 +982,115 @@ app.post('/api/admin/citizens', authenticateToken, requireRole(['admin', 'operat
       }
     }
 
-    const hashed = await bcrypt.hash(password || 'cidadao123', 10);
+    const hashed = await bcrypt.hash(password || 'usuario123', 10);
+    const targetTitle = hierarchy_title || (role === 'admin' ? 'Administrador do Sistema' : 'Usuário Cívico');
 
     const userRes = await client.query(
-      `INSERT INTO users (username, email, celular, password_hash, status)
-       VALUES ($1, $2, $3, $4, 'active') RETURNING id`,
-      [username, email || null, celular || null, hashed]
+      `INSERT INTO users (username, email, celular, password_hash, hierarchy_title, avatar_url, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'active') RETURNING id`,
+      [username, email || null, celular || null, hashed, targetTitle, avatar_url || null]
     );
     const newUserId = userRes.rows[0].id;
 
-    // Papel citizen
-    const roleRes = await client.query("SELECT id FROM roles WHERE name = 'citizen'");
-    await client.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)', [newUserId, roleRes.rows[0].id]);
+    // Buscar ID da role solicitada ('admin' ou 'usuario')
+    const targetRoleName = role === 'admin' ? 'admin' : 'usuario';
+    let targetRoleRes = await client.query('SELECT id FROM roles WHERE name = $1', [targetRoleName]);
+    if (targetRoleRes.rows.length === 0) {
+      targetRoleRes = await client.query("SELECT id FROM roles WHERE name = 'usuario'");
+    }
+    await client.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)', [newUserId, targetRoleRes.rows[0].id]);
 
-    // Score account
     await client.query('INSERT INTO score_accounts (user_id, current_score) VALUES ($1, 5000)', [newUserId]);
 
-    // Auditoria
     await client.query(
       `INSERT INTO audit_logs (actor_user_id, entity_name, entity_id, action, new_data)
-       VALUES ($1, 'users', $2, 'admin_create_citizen', $3)`,
-      [req.user.id, newUserId, JSON.stringify({ username, email, celular })]
+       VALUES ($1, 'users', $2, 'admin_create_user', $3)`,
+      [req.user.id, newUserId, JSON.stringify({ username, email, role: targetRoleName, hierarchy_title: targetTitle, avatar_url })]
     );
 
     await client.query('COMMIT');
-    res.json({ success: true, message: 'Cidadão registrado e indexado com sucesso no ILC.', user_id: newUserId });
+    res.json({ success: true, message: 'Usuário registrado com sucesso no sistema.', user_id: newUserId });
   } catch (err) {
     await client.query('ROLLBACK');
-    res.status(500).json({ error: 'Falha ao criar cidadão pelo administrador: ' + err.message });
+    res.status(500).json({ error: 'Falha ao criar usuário pelo administrador: ' + err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Atualizar Usuário pelo Admin (Editar Nível de Acesso, Título Personalizado e Foto)
+app.put('/api/admin/citizens/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
+  const citizenId = req.params.id;
+  const { username, email, celular, role, hierarchy_title, avatar_url, status } = req.body;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const userCheck = await client.query('SELECT id, username, status FROM users WHERE id = $1', [citizenId]);
+    if (userCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuário não encontrado.' });
+    }
+
+    if (username && username.trim() !== '') {
+      const dupRes = await client.query('SELECT id FROM users WHERE username = $1 AND id <> $2', [username.trim(), citizenId]);
+      if (dupRes.rows.length > 0) {
+        return res.status(400).json({ error: 'Nickname em uso por outro usuário.' });
+      }
+      await client.query('UPDATE users SET username = $1 WHERE id = $2', [username.trim(), citizenId]);
+    }
+
+    if (email !== undefined) {
+      await client.query('UPDATE users SET email = $1 WHERE id = $2', [email || null, citizenId]);
+    }
+
+    if (celular !== undefined) {
+      await client.query('UPDATE users SET celular = $1 WHERE id = $2', [celular || null, citizenId]);
+    }
+
+    if (hierarchy_title !== undefined && hierarchy_title.trim() !== '') {
+      await client.query('UPDATE users SET hierarchy_title = $1 WHERE id = $2', [hierarchy_title.trim(), citizenId]);
+    }
+
+    if (avatar_url !== undefined) {
+      await client.query('UPDATE users SET avatar_url = $1 WHERE id = $2', [avatar_url || null, citizenId]);
+    }
+
+    if (status && ['active', 'inactive', 'blocked'].includes(status)) {
+      await client.query('UPDATE users SET status = $1 WHERE id = $2', [status, citizenId]);
+    }
+
+    if (role && ['admin', 'usuario'].includes(role)) {
+      let roleRes = await client.query('SELECT id FROM roles WHERE name = $1', [role]);
+      if (roleRes.rows.length > 0) {
+        const newRoleId = roleRes.rows[0].id;
+        await client.query('DELETE FROM user_roles WHERE user_id = $1', [citizenId]);
+        await client.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)', [citizenId, newRoleId]);
+      }
+    }
+
+    await client.query('UPDATE users SET updated_at = NOW() WHERE id = $1', [citizenId]);
+
+    await client.query(
+      `INSERT INTO audit_logs (actor_user_id, entity_name, entity_id, action, new_data)
+       VALUES ($1, 'users', $2, 'admin_update_user', $3)`,
+      [req.user.id, citizenId, JSON.stringify({ username, role, hierarchy_title, avatar_url, status })]
+    );
+
+    await client.query('COMMIT');
+    res.json({ success: true, message: 'Dados do usuário atualizados com sucesso.' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: 'Erro ao atualizar usuário: ' + err.message });
   } finally {
     client.release();
   }
 });
 
 // Alterar Status do Cidadão (Bloquear/Ativar)
-app.post('/api/admin/citizens/:id/status', authenticateToken, requireRole(['admin', 'operator']), async (req, res) => {
+app.post('/api/admin/citizens/:id/status', authenticateToken, requireRole(['admin']), async (req, res) => {
   const citizenId = req.params.id;
-  const { status } = req.body; // active, inactive, blocked
+  const { status } = req.body;
 
   if (!['active', 'inactive', 'blocked'].includes(status)) {
     return res.status(400).json({ error: 'Status inválido fornecido.' });
@@ -999,13 +1102,12 @@ app.post('/api/admin/citizens/:id/status', authenticateToken, requireRole(['admi
 
     const oldRes = await client.query('SELECT status FROM users WHERE id = $1', [citizenId]);
     if (oldRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Cidadão não encontrado.' });
+      return res.status(404).json({ error: 'Usuário não encontrado.' });
     }
     const oldStatus = oldRes.rows[0].status;
 
     await client.query('UPDATE users SET status = $1, updated_at = NOW() WHERE id = $2', [status, citizenId]);
 
-    // Auditoria
     await client.query(
       `INSERT INTO audit_logs (actor_user_id, entity_name, entity_id, action, old_data, new_data)
        VALUES ($1, 'users', $2, 'update_status', $3, $4)`,
@@ -1018,7 +1120,7 @@ app.post('/api/admin/citizens/:id/status', authenticateToken, requireRole(['admi
     );
 
     await client.query('COMMIT');
-    res.json({ success: true, message: `Status do cidadão alterado para: ${status}` });
+    res.json({ success: true, message: `Status do usuário alterado para: ${status}` });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: 'Erro ao alterar status: ' + err.message });

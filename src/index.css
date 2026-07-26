@@ -1370,3 +1370,163 @@ textarea:focus {
     flex-wrap: nowrap;
   }
 }
+
+/* ==========================================
+   FOTO DE PERFIL & CARTEIRA DE IDENTIDADE CÍVICA
+   ========================================== */
+.header-user-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--gold);
+  box-shadow: 0 0 10px rgba(176, 138, 71, 0.4);
+}
+
+.header-avatar-placeholder {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--bg-2);
+  border: 2px solid var(--border);
+  color: var(--gold-light);
+  font-family: var(--font-title);
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hierarchy-pill {
+  background: linear-gradient(135deg, rgba(176, 138, 71, 0.25), rgba(85, 107, 47, 0.25));
+  border: 1px solid var(--gold);
+  color: var(--gold-light);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  display: inline-block;
+  margin-top: 2px;
+  margin-bottom: 2px;
+}
+
+.card-photo-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-right: 15px;
+}
+
+.card-photo-box {
+  width: 100px;
+  height: 120px;
+  border-radius: 8px;
+  border: 2px solid var(--gold);
+  background: #000;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.8), 0 0 12px rgba(176, 138, 71, 0.3);
+}
+
+.card-photo-box.large {
+  width: 140px;
+  height: 160px;
+}
+
+.cit-id-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.change-photo-btn {
+  background: rgba(176, 138, 71, 0.15);
+  border: 1px solid var(--border);
+  color: var(--gold-light);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.change-photo-btn:hover {
+  background: var(--gold);
+  color: #000;
+}
+
+.hierarchy-title-badge {
+  background: rgba(176, 138, 71, 0.15);
+  border: 1px solid var(--border);
+  color: var(--gold-light);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.role-badge {
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.role-badge.role-admin {
+  background: rgba(138, 61, 47, 0.25);
+  border: 1px solid var(--warning);
+  color: #E26D5C;
+}
+
+.role-badge.role-usuario {
+  background: rgba(115, 179, 58, 0.2);
+  border: 1px solid var(--success);
+  color: var(--success);
+}
+
+.table-user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--gold);
+}
+
+.table-avatar-placeholder {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  color: var(--gold-light);
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.file-input {
+  background: var(--bg-2);
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  padding: 8px;
+  border-radius: 4px;
+  width: 100%;
+  cursor: pointer;
+}
+

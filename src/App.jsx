@@ -9,21 +9,28 @@ function App() {
   const [token, setToken] = useState(localStorage.getItem('ilc_token') || null);
   const [userRole, setUserRole] = useState(localStorage.getItem('ilc_role') || null);
   const [username, setUsername] = useState(localStorage.getItem('ilc_username') || null);
+  const [userHierarchyTitle, setUserHierarchyTitle] = useState(localStorage.getItem('ilc_hierarchy_title') || null);
+  const [userAvatarUrl, setUserAvatarUrl] = useState(localStorage.getItem('ilc_avatar_url') || null);
 
   // Controle de Abas
   const [activeTab, setActiveTab] = useState('');
 
   // Toasts de Notificação
   const [toasts, setToasts] = useState([]);
-  
+
   // Modal Google Nickname
   const [googleModalActive, setGoogleModalActive] = useState(false);
   const [tempGoogleData, setTempGoogleData] = useState(null);
   const [googleNickname, setGoogleNickname] = useState('');
 
-  // Dados do Cidadão Autenticado
+  // Dados do Usuário Autenticado
   const [citizenData, setCitizenData] = useState(null);
   const [newNickname, setNewNickname] = useState('');
+
+  // Modal de Edição de Foto de Perfil / Carteira
+  const [photoModalOpen, setPhotoModalOpen] = useState(false);
+  const [inputAvatarUrl, setInputAvatarUrl] = useState('');
+  const [customTitleInput, setCustomTitleInput] = useState('');
 
   // Dados do Admin
   const [adminMetrics, setAdminMetrics] = useState(null);
@@ -43,13 +50,26 @@ function App() {
   const [quickEvidence, setQuickEvidence] = useState('');
   const [quickApproveDirect, setQuickApproveDirect] = useState(true);
 
-  // Indexar Novo Cidadão (Admin)
+  // Indexar Novo Usuário (Admin)
   const [createUsername, setCreateUsername] = useState('');
   const [createEmail, setCreateEmail] = useState('');
   const [createCelular, setCreateCelular] = useState('');
   const [createPassword, setCreatePassword] = useState('');
+  const [createRole, setCreateRole] = useState('usuario');
+  const [createHierarchyTitle, setCreateHierarchyTitle] = useState('Usuário Cívico');
+  const [createAvatarUrl, setCreateAvatarUrl] = useState('');
 
-  // Detalhe de Cidadão Individual (Admin)
+  // Modal de Edição de Usuário pelo Admin
+  const [editUserModalOpen, setEditUserModalOpen] = useState(false);
+  const [editingUserData, setEditingUserData] = useState(null);
+  const [editFormRole, setEditFormRole] = useState('usuario');
+  const [editFormTitle, setEditFormTitle] = useState('');
+  const [editFormAvatar, setEditFormAvatar] = useState('');
+  const [editFormUsername, setEditFormUsername] = useState('');
+  const [editFormEmail, setEditFormEmail] = useState('');
+  const [editFormStatus, setEditFormStatus] = useState('active');
+
+  // Detalhe de Usuário Individual (Admin)
   const [detailCitizenId, setDetailCitizenId] = useState(null);
   const [detailCitizenData, setDetailCitizenData] = useState(null);
   const [detailCertId, setDetailCertId] = useState('');
@@ -81,41 +101,30 @@ function App() {
 
   const parseApiResponse = async (res) => {
     const text = await res.text();
-
     if (!text) {
-      return {
-        error: res.ok
-          ? 'Resposta vazia do servidor.'
-          : `Servidor respondeu sem detalhes do erro (${res.status}).`
-      };
+      return { error: res.ok ? 'Resposta vazia do servidor.' : `Servidor respondeu sem detalhes (${res.status}).` };
     }
-
     try {
       return JSON.parse(text);
     } catch (err) {
-      return {
-        error: res.ok
-          ? 'Resposta inválida do servidor.'
-          : `Servidor retornou uma resposta inválida (${res.status}). Verifique os logs do backend.`
-      };
+      return { error: res.ok ? 'Resposta inválida do servidor.' : `Resposta inválida (${res.status}).` };
     }
   };
 
-  // Inicializar Aba padrão conforme Perfil
+  // Inicializar Aba padrão conforme Nível de Acesso Base
   useEffect(() => {
     if (token && userRole) {
-      if (userRole === 'citizen') {
-        setActiveTab('cit-dashboard');
-      } else {
+      if (userRole === 'admin') {
         setActiveTab('adm-dashboard');
+      } else {
+        setActiveTab('cit-dashboard');
       }
     }
   }, [token, userRole]);
 
-  // Capturar parâmetros de retorno do callback OAuth do Google
+  // Capturar parâmetros do callback OAuth do Google
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-
     const googleToken = params.get('google_token');
     const googleRole = params.get('google_role');
     const googleUsername = params.get('google_username');
@@ -124,12 +133,10 @@ function App() {
     const googleError = params.get('google_error');
 
     if (googleToken && googleRole && googleUsername) {
-      // Login/cadastro Google concluído — salvar sessão
       saveSession(googleToken, googleRole, decodeURIComponent(googleUsername));
-      showToast('Identidade Google Confirmada', 'Acesso cívico concedido via Google.', 'success');
+      showToast('Identidade Google Confirmada', 'Foto do perfil e acesso cívico autenticados via Google.', 'success');
       window.history.replaceState({}, '', '/');
     } else if (googleNew === '1' && googleTemp) {
-      // Nova conta Google — solicitar nickname
       setTempGoogleData({ temp_token: googleTemp });
       setGoogleNickname('');
       setGoogleModalActive(true);
@@ -153,32 +160,32 @@ function App() {
       fetchCitizenData();
     } else if (activeTab === 'adm-dashboard') {
       fetchAdminMetrics();
+      fetchAdminCitizens();
     } else if (activeTab === 'adm-citizens') {
       fetchAdminCitizens();
     } else if (activeTab === 'adm-approvals') {
-      fetchAdminMetrics(); // A fila de pendentes vem das métricas
+      fetchAdminMetrics();
     } else if (activeTab === 'adm-audit') {
       fetchAdminAuditLogs();
     }
   }, [activeTab, token, adminPage, adminSearch, adminFilterStatus, adminFilterTier]);
 
-  // Carregar dropdowns administrativos
+  // Carregar dados estáticos auxiliares para admin
   useEffect(() => {
-    if (token && userRole && userRole !== 'citizen') {
+    if (token && userRole === 'admin') {
       fetchEventTypes();
       fetchCertificates();
     }
   }, [token, userRole]);
 
-  // Sincronizar dados de detalhe de cidadão
+  // Sincronizar detalhe do usuário
   useEffect(() => {
     if (detailCitizenId && token) {
       fetchCitizenDetail(detailCitizenId);
     }
   }, [detailCitizenId, token]);
 
-  // REQUISIÇÕES DE API: CIDADÃO
-
+  // REQUISIÇÕES DE API: USUÁRIO
   const fetchCitizenData = async () => {
     try {
       const res = await fetch(`${API_BASE}/citizen/me`, {
@@ -188,36 +195,74 @@ function App() {
       if (!res.ok) throw new Error(data.error);
       setCitizenData(data);
       setNewNickname(data.profile.username);
+      setCustomTitleInput(data.profile.hierarchy_title || '');
+      setInputAvatarUrl(data.profile.avatar_url || '');
+
+      if (data.profile.hierarchy_title) {
+        setUserHierarchyTitle(data.profile.hierarchy_title);
+        localStorage.setItem('ilc_hierarchy_title', data.profile.hierarchy_title);
+      }
+      if (data.profile.avatar_url) {
+        setUserAvatarUrl(data.profile.avatar_url);
+        localStorage.setItem('ilc_avatar_url', data.profile.avatar_url);
+      }
     } catch (err) {
       showToast('Falha de Dados', err.message, 'warning');
     }
   };
 
-  const handleUpdateNickname = async (e) => {
-    e.preventDefault();
+  const handleUpdateProfile = async (e) => {
+    if (e) e.preventDefault();
     try {
-      const res = await fetch(`${API_BASE}/citizen/update-nickname`, {
+      const res = await fetch(`${API_BASE}/citizen/update-profile`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ nickname: newNickname })
+        body: JSON.stringify({
+          nickname: newNickname,
+          avatar_url: inputAvatarUrl,
+          hierarchy_title: customTitleInput
+        })
       });
       const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
 
       setUsername(data.nickname);
+      setUserHierarchyTitle(data.hierarchy_title);
+      setUserAvatarUrl(data.avatar_url);
       localStorage.setItem('ilc_username', data.nickname);
-      showToast('Cognome Atualizado', data.message, 'success');
+      if (data.hierarchy_title) localStorage.setItem('ilc_hierarchy_title', data.hierarchy_title);
+      if (data.avatar_url) localStorage.setItem('ilc_avatar_url', data.avatar_url);
+      else localStorage.removeItem('ilc_avatar_url');
+
+      showToast('Carteira de Identidade Atualizada', data.message, 'success');
+      setPhotoModalOpen(false);
       fetchCitizenData();
     } catch (err) {
       showToast('Erro ao Atualizar', err.message, 'warning');
     }
   };
 
-  // REQUISIÇÕES DE API: ADMIN
+  const handleFileUpload = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
 
+    if (file.size > 3 * 1024 * 1024) {
+      showToast('Tamanho Excedido', 'Selecione uma imagem de até 3MB.', 'warning');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setInputAvatarUrl(reader.result);
+      showToast('Imagem Carregada', 'Sua foto local está pronta para salvar.', 'info');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // REQUISIÇÕES DE API: ADMIN
   const fetchAdminMetrics = async () => {
     try {
       const res = await fetch(`${API_BASE}/admin/metrics`, {
@@ -298,11 +343,10 @@ function App() {
   };
 
   // ADMIN ACTIONS
-
   const handleQuickLaunchEvent = async (e) => {
     e.preventDefault();
     if (!quickCitizenId || !quickEventCode) {
-      showToast('Validação', 'Cidadão e Atividade são obrigatórios.', 'warning');
+      showToast('Validação', 'Usuário e Atividade são obrigatórios.', 'warning');
       return;
     }
 
@@ -333,7 +377,7 @@ function App() {
     }
   };
 
-  const handleAdminCreateCitizen = async (e) => {
+  const handleAdminCreateUser = async (e) => {
     e.preventDefault();
     try {
       const res = await fetch(`${API_BASE}/admin/citizens`, {
@@ -346,20 +390,68 @@ function App() {
           username: createUsername,
           email: createEmail,
           celular: createCelular,
-          password: createPassword
+          password: createPassword,
+          role: createRole,
+          hierarchy_title: createHierarchyTitle,
+          avatar_url: createAvatarUrl
         })
       });
       const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
 
-      showToast('Indexado com Sucesso', data.message, 'success');
+      showToast('Usuário Registrado', data.message, 'success');
       setCreateUsername('');
       setCreateEmail('');
       setCreateCelular('');
       setCreatePassword('');
+      setCreateHierarchyTitle(createRole === 'admin' ? 'Administrador' : 'Usuário Cívico');
+      setCreateAvatarUrl('');
       fetchAdminMetrics();
+      fetchAdminCitizens();
     } catch (err) {
-      showToast('Falha ao Criar Cidadão', err.message, 'warning');
+      showToast('Falha ao Criar Usuário', err.message, 'warning');
+    }
+  };
+
+  const openAdminEditUserModal = (user) => {
+    setEditingUserData(user);
+    setEditFormUsername(user.username);
+    setEditFormEmail(user.email || '');
+    setEditFormRole(user.role_name === 'admin' ? 'admin' : 'usuario');
+    setEditFormTitle(user.hierarchy_title || (user.role_name === 'admin' ? 'Administrador' : 'Usuário Cívico'));
+    setEditFormAvatar(user.avatar_url || '');
+    setEditFormStatus(user.status || 'active');
+    setEditUserModalOpen(true);
+  };
+
+  const handleAdminSaveUserEdit = async (e) => {
+    e.preventDefault();
+    if (!editingUserData) return;
+    try {
+      const res = await fetch(`${API_BASE}/admin/citizens/${editingUserData.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          username: editFormUsername,
+          email: editFormEmail,
+          role: editFormRole,
+          hierarchy_title: editFormTitle,
+          avatar_url: editFormAvatar,
+          status: editFormStatus
+        })
+      });
+      const data = await parseApiResponse(res);
+      if (!res.ok) throw new Error(data.error);
+
+      showToast('Usuário Atualizado', data.message, 'success');
+      setEditUserModalOpen(false);
+      fetchAdminCitizens();
+      if (detailCitizenId === editingUserData.id) fetchCitizenDetail(editingUserData.id);
+    } catch (err) {
+      showToast('Erro ao Editar Usuário', err.message, 'warning');
     }
   };
 
@@ -423,14 +515,13 @@ function App() {
       if (!res.ok) throw new Error(data.error);
 
       showToast('Evento Homologado', data.message, 'success');
-      fetchAdminMetrics(); // Atualiza a fila das métricas
+      fetchAdminMetrics();
     } catch (err) {
       showToast('Falha na Resolução', err.message, 'warning');
     }
   };
 
   // FLUXO DE LOGIN & CADASTRO (CLIENTE)
-
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -442,7 +533,7 @@ function App() {
       const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
 
-      saveSession(data.token, data.role, data.username);
+      saveSession(data.token, data.role, data.username, data.hierarchy_title, data.avatar_url);
       showToast('Identidade Confirmada', 'Acesso concedido aos arquivos estatais.', 'success');
     } catch (err) {
       showToast('Erro de Login', err.message, 'warning');
@@ -465,7 +556,7 @@ function App() {
       const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
 
-      saveSession(data.token, data.role, data.username);
+      saveSession(data.token, data.role, data.username, data.hierarchy_title, data.avatar_url);
       showToast('Registro Concluído', 'Sua lealdade cívica começa com 5.000 pontos.', 'success');
     } catch (err) {
       showToast('Falha no Cadastro', err.message, 'warning');
@@ -473,7 +564,6 @@ function App() {
   };
 
   const triggerGoogleSignup = () => {
-    // Redireciona para o endpoint Express que inicia o fluxo OAuth real do Google
     window.location.href = '/api/auth/google';
   };
 
@@ -493,27 +583,35 @@ function App() {
       if (!res.ok) throw new Error(data.error);
 
       setGoogleModalActive(false);
-      saveSession(data.token, data.role, data.username);
-      showToast('Registro Google Concluído', 'Sua lealdade cívica começa com 5.000 pontos.', 'success');
+      saveSession(data.token, data.role, data.username, data.hierarchy_title, data.avatar_url);
+      showToast('Registro Google Concluído', 'Sua foto e lealdade cívica foram integradas com sucesso.', 'success');
     } catch (err) {
       showToast('Erro de Cadastro Google', err.message, 'warning');
     }
   };
 
-
-  const saveSession = (tok, role, user) => {
+  const saveSession = (tok, role, user, title, avatar) => {
     setToken(tok);
     setUserRole(role);
     setUsername(user);
+    const resolvedTitle = title || (role === 'admin' ? 'Administrador do Sistema' : 'Usuário Cívico');
+    setUserHierarchyTitle(resolvedTitle);
+    setUserAvatarUrl(avatar || null);
+
     localStorage.setItem('ilc_token', tok);
     localStorage.setItem('ilc_role', role);
     localStorage.setItem('ilc_username', user);
+    localStorage.setItem('ilc_hierarchy_title', resolvedTitle);
+    if (avatar) localStorage.setItem('ilc_avatar_url', avatar);
+    else localStorage.removeItem('ilc_avatar_url');
   };
 
   const handleLogout = () => {
     setToken(null);
     setUserRole(null);
     setUsername(null);
+    setUserHierarchyTitle(null);
+    setUserAvatarUrl(null);
     setCitizenData(null);
     setAdminMetrics(null);
     setDetailCitizenId(null);
@@ -532,15 +630,14 @@ function App() {
       const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
 
-      setDetailCitizenId(null); // Fecha ficha detalhe se aberta
-      saveSession(data.token, data.role, data.username);
+      setDetailCitizenId(null);
+      saveSession(data.token, data.role, data.username, data.hierarchy_title, data.avatar_url);
       showToast('Troca de Perfil', `Simulação ativa como ${id}.`, 'info');
     } catch (err) {
       showToast('Falha no Simulador', err.message, 'warning');
     }
   };
 
-  // Renderizar Recomendações cívicas
   const renderCitizenRecommendations = () => {
     if (!citizenData || !citizenData.tier) return null;
     const isLowTier = citizenData.tier.min_score < 4000;
@@ -566,8 +663,6 @@ function App() {
     ));
   };
 
-  // FAIXAS DE CORES & CALCULADORA DE PROGRESSO
-
   const getTierDetails = (score) => {
     if (score < 2000) return { name: 'Vigilância Máxima', color: '#8A3D2F' };
     if (score < 4000) return { name: 'Restrito', color: '#4E6E8E' };
@@ -581,7 +676,6 @@ function App() {
   if (!token) {
     return (
       <div id="auth-screen" className="screen active">
-        {/* Notificações no Login */}
         <div className="toast-container">
           {toasts.map(t => (
             <div key={t.id} className={`toast ${t.type}`}>
@@ -603,9 +697,9 @@ function App() {
             </svg>
           </div>
 
-          <h1 className="state-title">LOGIN DO CIDADÃO</h1>
+          <h1 className="state-title">PORTAL DE ACESSO CÍVICO</h1>
           <p className="state-subtitle">PÁTRIA • ORDEM • LEALDADE</p>
-          <p className="auth-helper">Insira seus dados para autenticação no Painel Central do Índice de Lealdade Cívica.</p>
+          <p className="auth-helper">Insira suas credenciais para autenticação no Sistema de Lealdade Cívica.</p>
 
           <div className="auth-tabs">
             <button className={`auth-tab ${authTab === 'login' ? 'active' : ''}`} onClick={() => setAuthTab('login')}>ENTRAR</button>
@@ -630,7 +724,7 @@ function App() {
               <div className="form-group">
                 <label>NICKNAME ÚNICO *</label>
                 <input type="text" placeholder="ex: cidadao_exemplar" required value={regUsername} onChange={e => setRegUsername(e.target.value)} />
-                <span className="field-desc">Nickname deve ser único no sistema.</span>
+                <span className="field-desc">Nickname único de identificação.</span>
               </div>
               <div className="form-group">
                 <label>E-MAIL (OPCIONAL)</label>
@@ -649,7 +743,7 @@ function App() {
           )}
 
           <div className="auth-divider">
-            <span>OU ACESSE VIA REDE ESTATAL</span>
+            <span>OU ACESSE COM FOTO VIA GOOGLE</span>
           </div>
 
           <button className="state-btn google-btn" onClick={triggerGoogleSignup}>
@@ -664,7 +758,7 @@ function App() {
         <div className={`modal-overlay ${googleModalActive ? 'active' : ''}`}>
           <div className="modal-card">
             <h2 className="modal-title">COMPLETAR CADASTRO CÍVICO GOOGLE</h2>
-            <p className="modal-desc">Escolha um nickname único no Estado para concluir o seu cadastro cívico pelo Google.</p>
+            <p className="modal-desc">Sua foto de perfil do Google será importada para sua Carteira de Identidade Cívica. Escolha um nickname único para finalizar.</p>
             <form onSubmit={handleGoogleSignupSubmit}>
               <div className="form-group">
                 <label>NICKNAME CÍVICO *</label>
@@ -681,22 +775,23 @@ function App() {
     );
   }
 
-  // PORTAL DE ACESSO LOGADO
+  const activeAvatar = (citizenData && citizenData.profile && citizenData.profile.avatar_url) || userAvatarUrl;
+  const activeHierarchyTitle = (citizenData && citizenData.profile && citizenData.profile.hierarchy_title) || userHierarchyTitle || (userRole === 'admin' ? 'Administrador' : 'Usuário Cívico');
+
   return (
     <div id="app-container" className="app-container active">
       {/* Simulador Toolbar */}
       <div id="sim-toolbar" className="sim-toolbar">
         <div className="sim-brand">
-          <span className="sim-tag">AMBIENTE DE TESTE CÍVICO</span>
+          <span className="sim-tag">AMBIENTE DE SIMULAÇÃO DE NÍVEIS</span>
         </div>
         <div className="sim-actions">
           <span className="sim-label">Simular Login:</span>
-          <button className="sim-btn admin" onClick={() => runSimLogin('comissario_otavio', 'admin123')}>Admin</button>
-          <button className="sim-btn operator" onClick={() => runSimLogin('operador_civil', 'operator123')}>Operador</button>
-          <button className="sim-btn auditor" onClick={() => runSimLogin('auditor_pátria', 'auditor123')}>Auditor</button>
-          <button className="sim-btn citizen-high" onClick={() => runSimLogin('mariana_souza', 'cidadao123')}>Cidadão (Alto)</button>
-          <button className="sim-btn citizen-mid" onClick={() => runSimLogin('joao_silva', 'cidadao123')}>Cidadão (Comum)</button>
-          <button className="sim-btn citizen-low" onClick={() => runSimLogin('carlos_antunes', 'cidadao123')}>Cidadão (Vigi.)</button>
+          <button className="sim-btn admin" onClick={() => runSimLogin('comissario_otavio', 'admin123')}>Admin (Comissário)</button>
+          <button className="sim-btn operator" onClick={() => runSimLogin('operador_civil', 'usuario123')}>Usuário (Operador)</button>
+          <button className="sim-btn auditor" onClick={() => runSimLogin('auditor_patria', 'usuario123')}>Usuário (Auditor)</button>
+          <button className="sim-btn citizen-high" onClick={() => runSimLogin('elena_rostova', 'usuario123')}>Usuário (Inspetora)</button>
+          <button className="sim-btn citizen-mid" onClick={() => runSimLogin('joao_silva', 'usuario123')}>Usuário (Comum)</button>
         </div>
       </div>
 
@@ -720,14 +815,21 @@ function App() {
             <path d="M75,65 Q80,50 75,35" stroke="#556B2F" strokeWidth="2" fill="none" />
           </svg>
           <div className="header-titles">
-            <h1>REPUBLICA CÍVICA NACIONAL</h1>
-            <h2>SISTEMA OFICIAL DE MONITORAMENTO DE LEALDADE (ILC)</h2>
+            <h1>REPÚBLICA CÍVICA NACIONAL</h1>
+            <h2>SISTEMA OFICIAL DE LEALDADE (ILC)</h2>
           </div>
         </div>
+
         <div className="header-user-info">
+          {activeAvatar ? (
+            <img src={activeAvatar} alt="Foto Perfil" className="header-user-avatar" />
+          ) : (
+            <div className="header-avatar-placeholder">{username ? username.charAt(0).toUpperCase() : 'U'}</div>
+          )}
           <div className="user-meta">
             <span className="session-name">@{username}</span>
-            <span className="session-badge">{getRoleLabel(userRole)}</span>
+            <span className="hierarchy-pill">{activeHierarchyTitle}</span>
+            <span className="session-badge">{userRole === 'admin' ? 'Nível Administrador' : 'Nível Usuário'}</span>
           </div>
           <button className="state-btn outline logout-btn" onClick={handleLogout}>LOGOUT</button>
         </div>
@@ -735,64 +837,97 @@ function App() {
 
       {/* Abas de Navegação */}
       <nav className="main-nav">
-        {userRole === 'citizen' ? (
+        {userRole !== 'admin' ? (
           <div className="nav-group active">
-            <button className={`nav-tab ${activeTab === 'cit-dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('cit-dashboard')}>MEU PERFIL CÍVICO</button>
+            <button className={`nav-tab ${activeTab === 'cit-dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('cit-dashboard')}>CARTEIRA DE IDENTIDADE</button>
             <button className={`nav-tab ${activeTab === 'cit-certificates' ? 'active' : ''}`} onClick={() => setActiveTab('cit-certificates')}>MEUS CERTIFICADOS</button>
             <button className={`nav-tab ${activeTab === 'cit-history' ? 'active' : ''}`} onClick={() => setActiveTab('cit-history')}>HISTÓRICO DE AÇÕES</button>
-            <button className={`nav-tab ${activeTab === 'cit-settings' ? 'active' : ''}`} onClick={() => setActiveTab('cit-settings')}>CONFIGURAÇÕES</button>
+            <button className={`nav-tab ${activeTab === 'cit-settings' ? 'active' : ''}`} onClick={() => setActiveTab('cit-settings')}>CONFIGURAÇÕES DA CONTA</button>
           </div>
         ) : (
           <div className="nav-group active">
             <button className={`nav-tab ${activeTab === 'adm-dashboard' ? 'active' : ''}`} onClick={() => { setDetailCitizenId(null); setActiveTab('adm-dashboard'); }}>PAINEL ADMINISTRATIVO</button>
-            <button className={`nav-tab ${activeTab === 'adm-citizens' || detailCitizenId !== null ? 'active' : ''}`} onClick={() => { setDetailCitizenId(null); setActiveTab('adm-citizens'); }}>LISTA DE CIDADÃOS</button>
+            <button className={`nav-tab ${activeTab === 'adm-citizens' || detailCitizenId !== null ? 'active' : ''}`} onClick={() => { setDetailCitizenId(null); setActiveTab('adm-citizens'); }}>GESTÃO DE USUÁRIOS</button>
             <button className={`nav-tab ${activeTab === 'adm-approvals' ? 'active' : ''}`} onClick={() => { setDetailCitizenId(null); setActiveTab('adm-approvals'); }}>APROVAÇÕES PENDENTES</button>
-            {(userRole === 'admin' || userRole === 'auditor') && (
-              <button className={`nav-tab ${activeTab === 'adm-audit' ? 'active' : ''}`} onClick={() => { setDetailCitizenId(null); setActiveTab('adm-audit'); }}>LOGS DE AUDITORIA</button>
-            )}
+            <button className={`nav-tab ${activeTab === 'adm-audit' ? 'active' : ''}`} onClick={() => { setDetailCitizenId(null); setActiveTab('adm-audit'); }}>LOGS DE AUDITORIA</button>
+            <button className={`nav-tab ${activeTab === 'cit-dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('cit-dashboard')}>MINHA CARTEIRA</button>
           </div>
         )}
       </nav>
 
-      {/* Main Content */}
+      {/* Conteúdo Principal */}
       <main className="main-content">
         
         {/* ========================================== */}
-        // CITIZEN DASHBOARD SCREEN
+        {/* CARTEIRA DE IDENTIDADE CÍVICA (USER/ADMIN) */}
         {/* ========================================== */}
         {activeTab === 'cit-dashboard' && citizenData && (
           <section className="tab-pane active">
             <div className="bento-grid">
-              {/* Cartão Cívico */}
-              <div className="bento-card col-4 credential-card-wrapper">
+              
+              {/* CARTÃO DE IDENTIDADE CÍVICA OFICIAL */}
+              <div className="bento-card col-5 credential-card-wrapper">
                 <div className="credential-card gold-border">
                   <div className="card-bg-pattern"></div>
+                  
                   <div className="card-header">
-                    <span className="card-estatal-text">MINISTÉRIO DA LEALDADE</span>
+                    <span className="card-estatal-text">CARTEIRA DE IDENTIDADE CÍVICA</span>
                     <span className="card-serial">REG: {citizenData.profile.id.substring(0, 8).toUpperCase()}</span>
                   </div>
+
                   <div className="card-body">
-                    <div className="card-photo-box">
-                      <div className="cit-avatar-placeholder"></div>
+                    {/* FOTO E BOTÃO DE EDITAR FOTO */}
+                    <div className="card-photo-container">
+                      <div className="card-photo-box">
+                        {activeAvatar ? (
+                          <img src={activeAvatar} alt="Foto da Carteira" className="cit-id-photo" />
+                        ) : (
+                          <div className="cit-avatar-placeholder">
+                            <svg viewBox="0 0 24 24" width="48" height="48" fill="#B08A47">
+                              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+                      <button className="change-photo-btn" onClick={() => setPhotoModalOpen(true)}>
+                        📷 Alterar Foto da Carteira
+                      </button>
                     </div>
+
                     <div className="card-details">
                       <div className="detail-row">
-                        <span className="label">CIDADÃO</span>
+                        <span className="label">COGNOME</span>
                         <span className="value">@{citizenData.profile.username}</span>
                       </div>
+                      
+                      {/* TÍTULO PERSONALIZADO DA HIERARQUIA */}
+                      <div className="detail-row">
+                        <span className="label">TÍTULO DE HIERARQUIA</span>
+                        <span className="value hierarchy-title-badge">{activeHierarchyTitle}</span>
+                      </div>
+
+                      <div className="detail-row">
+                        <span className="label">NÍVEL DE ACESSO BASE</span>
+                        <span className="value">{citizenData.profile.role === 'admin' ? 'ADMINISTRADOR' : 'USUÁRIO'}</span>
+                      </div>
+
                       <div className="detail-row">
                         <span className="label">STATUS CIVIL</span>
                         <span className={`value status-${citizenData.profile.status}`}>{citizenData.profile.status.toUpperCase()}</span>
                       </div>
+
                       <div className="detail-row">
-                        <span className="label">FAIXA ILC</span>
-                        <span className="value tier-badge" style={{ backgroundColor: citizenData.tier.color, color: '#000' }}>{citizenData.tier.name}</span>
+                        <span className="label">FAIXA DE CONFIANÇA</span>
+                        <span className="value tier-badge" style={{ backgroundColor: citizenData.tier ? citizenData.tier.color : '#B9B19A', color: '#000' }}>
+                          {citizenData.tier ? citizenData.tier.name : 'Cidadão Comum'}
+                        </span>
                       </div>
                     </div>
                   </div>
+
                   <div className="card-footer">
                     <div className="score-display">
-                      <span class="score-label">PONTUAÇÃO ILC ATUAL</span>
+                      <span className="score-label">PONTUAÇÃO ILC ATUAL</span>
                       <span className="score-number font-hero success-glow">{citizenData.profile.current_score}</span>
                     </div>
                     <div className="card-barcode">|||| | ||| | || |||| | ||| ||||</div>
@@ -800,23 +935,23 @@ function App() {
                 </div>
               </div>
 
-              {/* Evolução de Faixa */}
+              {/* EVOLUÇÃO DE FAIXA */}
               <div className="bento-card col-4 flex-col justify-between">
                 <div className="card-head">
                   <h3 className="card-title">EVOLUÇÃO DA CLASSIFICAÇÃO</h3>
-                  <p className="card-subtitle">Sua progressão linear rumo ao próximo patamar.</p>
+                  <p className="card-subtitle">Sua progressão linear no Índice de Lealdade.</p>
                 </div>
 
                 <div className="progress-section">
                   <div className="progress-labels">
-                    <span>{citizenData.tier.name}</span>
+                    <span>{citizenData.tier ? citizenData.tier.name : 'Atual'}</span>
                     <span>{citizenData.next_tier ? citizenData.next_tier.name : 'Nível Máximo'}</span>
                   </div>
                   <div className="progress-bar-track">
                     <div 
                       className="progress-bar-fill" 
                       style={{ 
-                        width: citizenData.next_tier 
+                        width: citizenData.next_tier && citizenData.tier
                           ? `${((citizenData.profile.current_score - citizenData.tier.min_score) / (citizenData.next_tier.min_score - citizenData.tier.min_score)) * 100}%` 
                           : '100%' 
                       }}
@@ -831,12 +966,23 @@ function App() {
 
                 <div className="tier-info-panel">
                   <h4 className="tier-info-title text-gold">RESTRICÕES / PRIVILÉGIOS ATUAIS:</h4>
-                  <p className="tier-info-desc">{citizenData.tier.privileges}</p>
+                  <p className="tier-info-desc">{citizenData.tier ? citizenData.tier.privileges : 'Direitos padrão de cidadania.'}</p>
                 </div>
               </div>
 
-              {/* Histograma Temporal */}
-              <div className="bento-card col-5 chart-card">
+              {/* RECOMENDAÇÕES */}
+              <div className="bento-card col-3">
+                <div className="card-head">
+                  <h3 className="card-title">FORTALECIMENTO DO SCORE</h3>
+                  <p className="card-subtitle">Ações recomendadas para alavancar a pontuação.</p>
+                </div>
+                <div className="recommendations-list">
+                  {renderCitizenRecommendations()}
+                </div>
+              </div>
+
+              {/* HISTOGRAMA TEMPORAL */}
+              <div className="bento-card col-12 chart-card">
                 <div className="card-head">
                   <h3 className="card-title">HISTOGRAMA DE COMPORTAMENTO CÍVICO</h3>
                   <p className="card-subtitle">Evolução temporal nas últimas atividades homologadas.</p>
@@ -846,41 +992,27 @@ function App() {
                 </div>
               </div>
 
-              {/* Recomendações */}
-              <div className="bento-card col-3">
-                <div className="card-head">
-                  <h3 className="card-title">FORTALECIMENTO DO SCORE</h3>
-                  <p className="card-subtitle">Realize estas ações para ganhar bônus cívicos.</p>
-                </div>
-                <div className="recommendations-list">
-                  {renderCitizenRecommendations()}
-                </div>
-              </div>
             </div>
           </section>
         )}
 
-        {/* ========================================== */}
-        // CITIZEN CERTIFICATES SCREEN
-        {/* ========================================== */}
+        {/* CERTIFICADOS */}
         {activeTab === 'cit-certificates' && citizenData && (
           <section className="tab-pane active">
             <div className="section-heading" style={{ marginBottom: '20px' }}>
               <h2 className="section-title">CÉDULAS DE MÉRITO NACIONAL</h2>
-              <p className="section-subtitle">Conquistas imutáveis outorgadas em formato oficial por acúmulo de méritos.</p>
+              <p className="section-subtitle">Conquistas oficiais outorgadas por acúmulo de méritos.</p>
             </div>
             <CertificatesGrid certificates={citizenData.certificates} />
           </section>
         )}
 
-        {/* ========================================== */}
-        // CITIZEN HISTORY SCREEN
-        {/* ========================================== */}
+        {/* HISTÓRICO */}
         {activeTab === 'cit-history' && citizenData && (
           <section className="tab-pane active">
             <div className="section-heading" style={{ marginBottom: '20px' }}>
               <h2 className="section-title">CRONOLOGIA DE COMPORTAMENTO</h2>
-              <p className="section-subtitle">Todos os seus registros de bônus, penalidades e homologações cívicas.</p>
+              <p className="section-subtitle">Todos os registros de bônus, penalidades e homologações.</p>
             </div>
             <div className="table-container">
               <table className="state-table">
@@ -926,47 +1058,79 @@ function App() {
           </section>
         )}
 
-        {/* ========================================== */}
-        // CITIZEN SETTINGS SCREEN
-        {/* ========================================== */}
+        {/* CONFIGURAÇÕES DE PERFIL DA CONTA */}
         {activeTab === 'cit-settings' && (
           <section className="tab-pane active">
             <div className="section-heading" style={{ marginBottom: '20px' }}>
-              <h2 className="section-title">CONFIGURAÇÕES DE IDENTIDADE</h2>
-              <p className="section-subtitle">O cognome é editável, porém deve permanecer estritamente único.</p>
+              <h2 className="section-title">CONFIGURAÇÕES DA CARTEIRA E PERFIL</h2>
+              <p className="section-subtitle">Personalize sua foto de perfil, nickname e título de hierarquia exibido.</p>
             </div>
+
             <div className="bento-grid">
-              <div className="bento-card col-4">
-                <h3 className="card-title">ALTERAR COGNOME (NICKNAME)</h3>
-                <form onSubmit={handleUpdateNickname} className="form-dense" style={{ marginTop: '15px' }}>
+              <div className="bento-card col-6">
+                <h3 className="card-title">DADOS VISÍVEIS DA CARTEIRA</h3>
+                <form onSubmit={handleUpdateProfile} className="form-dense" style={{ marginTop: '15px' }}>
                   <div className="form-group">
-                    <label>NOVO NICKNAME</label>
+                    <label>COGNOME (NICKNAME)</label>
                     <input type="text" required value={newNickname} onChange={e => setNewNickname(e.target.value)} />
-                    <span className="field-desc">A alteração registrará um log de auditoria permanente.</span>
+                    <span className="field-desc">Identificador único no sistema.</span>
                   </div>
-                  <button type="submit" className="state-btn primary gold-glow">SALVAR NICKNAME</button>
+
+                  <div className="form-group">
+                    <label>TÍTULO DE HIERARQUIA DESEJADO</label>
+                    <input type="text" placeholder="ex: Operador Sênior, Inspetor, Cidadão Ativo" value={customTitleInput} onChange={e => setCustomTitleInput(e.target.value)} />
+                    <span className="field-desc">Título personalizado exibido na sua Carteira de Identidade.</span>
+                  </div>
+
+                  <div className="form-group">
+                    <label>FOTO DA CARTEIRA (URL OU BASE64)</label>
+                    <input type="text" placeholder="https://... ou escolha um arquivo abaixo" value={inputAvatarUrl} onChange={e => setInputAvatarUrl(e.target.value)} />
+                  </div>
+
+                  <div className="form-group">
+                    <label>OU SELECIONE FOTO DO SEU COMPUTADOR</label>
+                    <input type="file" accept="image/*" onChange={handleFileUpload} className="file-input" />
+                  </div>
+
+                  <button type="submit" className="state-btn primary gold-glow">SALVAR ALTERAÇÕES DA CARTEIRA</button>
                 </form>
+              </div>
+
+              <div className="bento-card col-6 flex-col justify-center align-center">
+                <h3 className="card-title" style={{ marginBottom: '15px' }}>PRÉ-VISUALIZAÇÃO DA FOTO</h3>
+                <div className="card-photo-box large">
+                  {inputAvatarUrl ? (
+                    <img src={inputAvatarUrl} alt="Preview Foto" className="cit-id-photo" />
+                  ) : (
+                    <div className="cit-avatar-placeholder">
+                      <svg viewBox="0 0 24 24" width="64" height="64" fill="#B08A47">
+                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                      </svg>
+                    </div>
+                  )}
+                </div>
+                <span className="text-gold" style={{ marginTop: '15px', fontWeight: 'bold' }}>{customTitleInput || activeHierarchyTitle}</span>
               </div>
             </div>
           </section>
         )}
 
         {/* ========================================== */}
-        // ADMIN DASHBOARD
+        {/* ADMIN DASHBOARD */}
         {/* ========================================== */}
-        {activeTab === 'adm-dashboard' && adminMetrics && (
+        {activeTab === 'adm-dashboard' && adminMetrics && userRole === 'admin' && (
           <section className="tab-pane active">
             <div className="stats-row">
               <div className="stat-card">
-                <span className="stat-label">POPULAÇÃO CÍVICA MONITORADA</span>
+                <span className="stat-label">POPULAÇÃO MONITORADA</span>
                 <span className="stat-value font-hero text-gold">{adminMetrics.total_citizens}</span>
               </div>
               <div className="stat-card">
-                <span className="stat-label">MÉDIA NACIONAL DO ILC</span>
+                <span className="stat-label">MÉDIA NACIONAL ILC</span>
                 <span className="stat-value font-hero text-success">{adminMetrics.average_score}</span>
               </div>
               <div className="stat-card">
-                <span className="stat-label">CIDADÃOS EM VIGILÂNCIA MÁXIMA</span>
+                <span className="stat-label">VIGILÂNCIA MÁXIMA</span>
                 <span className="stat-value font-hero text-warning">{adminMetrics.alert_count}</span>
               </div>
             </div>
@@ -974,8 +1138,8 @@ function App() {
             <div className="bento-grid">
               {/* Gráfico Demográfico */}
               <div className="bento-card col-4">
-                <h3 className="card-title">DISTRIBUIÇÃO DEMOGRÁFICA POR FAIXAS</h3>
-                <p className="card-subtitle">Visualização proporcional dos cidadãos por nível de confiança.</p>
+                <h3 className="card-title">DISTRIBUIÇÃO DEMOGRÁFICA</h3>
+                <p className="card-subtitle">Proporção de usuários por nível de confiança.</p>
                 <div className="tiers-distribution-container" style={{ marginTop: '15px' }}>
                   {adminMetrics.distribution.map(item => {
                     const total = adminMetrics.total_citizens || 1;
@@ -998,14 +1162,14 @@ function App() {
               {/* Lançamento Rápido */}
               <div className="bento-card col-4">
                 <h3 className="card-title">LANÇAMENTO RÁPIDO DE EVENTOS</h3>
-                <p className="card-subtitle">Aplique deltas de pontos positivos ou negativos instantaneamente.</p>
+                <p className="card-subtitle">Aplique deltas positivos ou negativos instantaneamente.</p>
                 <form onSubmit={handleQuickLaunchEvent} className="form-dense" style={{ marginTop: '15px' }}>
                   <div className="form-group">
-                    <label>SELECIONAR CIDADÃO *</label>
+                    <label>SELECIONAR USUÁRIO *</label>
                     <select required value={quickCitizenId} onChange={e => setQuickCitizenId(e.target.value)}>
-                      <option value="">Selecione o cidadão...</option>
+                      <option value="">Selecione o usuário...</option>
                       {adminCitizens.map(c => (
-                        <option key={c.id} value={c.id}>{c.username} (Score: {c.current_score})</option>
+                        <option key={c.id} value={c.id}>{c.username} ({c.hierarchy_title || 'Usuário'}) - Score: {c.current_score}</option>
                       ))}
                     </select>
                   </div>
@@ -1032,32 +1196,47 @@ function App() {
                       Aprovar evento imediatamente (ignorar homologação)
                     </label>
                   </div>
-                  <button type="submit" className="state-btn primary gold-glow">PUBLICAR E APLICAR EVENTO</button>
+                  <button type="submit" className="state-btn primary gold-glow">PUBLICAR EVENTO</button>
                 </form>
               </div>
 
-              {/* Cadastrar Cidadão */}
+              {/* Cadastrar Usuário */}
               <div className="bento-card col-4">
-                <h3 className="card-title">INDEXAR NOVO CIDADÃO</h3>
-                <p className="card-subtitle">Indexação de novas fichas na base governamental.</p>
-                <form onSubmit={handleAdminCreateCitizen} className="form-dense" style={{ marginTop: '15px' }}>
+                <h3 className="card-title">INDEXAR NOVO USUÁRIO</h3>
+                <p className="card-subtitle">Cadastro de contas com Nível Base e Título Personalizado.</p>
+                <form onSubmit={handleAdminCreateUser} className="form-dense" style={{ marginTop: '15px' }}>
                   <div className="form-group">
-                    <label>NICKNAME / COGNOME *</label>
-                    <input type="text" required placeholder="ex: novo_cidadao" value={createUsername} onChange={e => setCreateUsername(e.target.value)} />
+                    <label>NICKNAME *</label>
+                    <input type="text" required placeholder="ex: novo_usuario" value={createUsername} onChange={e => setCreateUsername(e.target.value)} />
                   </div>
                   <div className="form-group">
                     <label>E-MAIL *</label>
                     <input type="email" required placeholder="email@patria.gov.br" value={createEmail} onChange={e => setCreateEmail(e.target.value)} />
                   </div>
                   <div className="form-group">
-                    <label>TELEFONE CELULAR</label>
-                    <input type="text" placeholder="+5511999998888" value={createCelular} onChange={e => setCreateCelular(e.target.value)} />
+                    <label>NÍVEL DE ACESSO BASE *</label>
+                    <select value={createRole} onChange={e => {
+                      setCreateRole(e.target.value);
+                      if (e.target.value === 'admin') setCreateHierarchyTitle('Administrador do Sistema');
+                      else setCreateHierarchyTitle('Usuário Cívico');
+                    }}>
+                      <option value="usuario">Usuário (Padrão)</option>
+                      <option value="admin">Administrador (Total)</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>TÍTULO PERSONALIZADO DA HIERARQUIA *</label>
+                    <input type="text" required placeholder="ex: Comissário, Operador, Auditor, Cidadão A" value={createHierarchyTitle} onChange={e => setCreateHierarchyTitle(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label>URL DA FOTO (OPCIONAL)</label>
+                    <input type="text" placeholder="https://..." value={createAvatarUrl} onChange={e => setCreateAvatarUrl(e.target.value)} />
                   </div>
                   <div className="form-group">
                     <label>SENHA TEMPORÁRIA *</label>
                     <input type="password" required placeholder="Senha inicial" value={createPassword} onChange={e => setCreatePassword(e.target.value)} />
                   </div>
-                  <button type="submit" className="state-btn success success-glow">INDEXAR CIDADÃO</button>
+                  <button type="submit" className="state-btn success success-glow">INDEXAR USUÁRIO</button>
                 </form>
               </div>
             </div>
@@ -1065,13 +1244,13 @@ function App() {
         )}
 
         {/* ========================================== */}
-        // ADMIN CITIZEN LIST
+        {/* GESTÃO DE USUÁRIOS (ADMIN) */}
         {/* ========================================== */}
-        {activeTab === 'adm-citizens' && detailCitizenId === null && (
+        {activeTab === 'adm-citizens' && detailCitizenId === null && userRole === 'admin' && (
           <section className="tab-pane active">
             <div className="section-heading" style={{ marginBottom: '20px' }}>
-              <h2 className="section-title">BASE CENTRAL DE CIDADÃOS</h2>
-              <p className="section-subtitle">Monitore, altere permissões de acesso e consulte linhas do tempo cívicas.</p>
+              <h2 className="section-title">GESTÃO CENTRAL DE USUÁRIOS E HIERARQUIAS</h2>
+              <p className="section-subtitle">Gerencie os níveis de acesso (Admin/Usuário), atribua títulos personalizados e fotos.</p>
             </div>
 
             {/* Filtros */}
@@ -1079,7 +1258,7 @@ function App() {
               <div className="filter-group search">
                 <input 
                   type="text" 
-                  placeholder="Pesquisar por nome, e-mail ou celular..." 
+                  placeholder="Pesquisar por nome, e-mail, celular ou título..." 
                   value={adminSearch} 
                   onChange={e => { setAdminSearch(e.target.value); setAdminPage(1); }} 
                 />
@@ -1094,7 +1273,7 @@ function App() {
               </div>
               <div className="filter-group">
                 <select value={adminFilterTier} onChange={e => { setAdminFilterTier(e.target.value); setAdminPage(1); }}>
-                  <option value="">Todas as Faixas</option>
+                  <option value="">Todas as Faixas ILC</option>
                   <option value="Vigilância Máxima">Vigilância Máxima</option>
                   <option value="Restrito">Restrito</option>
                   <option value="Cidadão Comum">Cidadão Comum</option>
@@ -1105,36 +1284,51 @@ function App() {
               </div>
             </div>
 
-            {/* Tabela de cidadãos */}
+            {/* Tabela de Usuários */}
             <div className="table-container">
               <table className="state-table">
                 <thead>
                   <tr>
-                    <th>NICKNAME</th>
-                    <th>CONTATO</th>
-                    <th>ILC ATUAL</th>
+                    <th>FOTO</th>
+                    <th>NICKNAME / CONTATO</th>
+                    <th>NÍVEL BASE</th>
+                    <th>TÍTULO DE HIERARQUIA</th>
+                    <th>ILC SCORE</th>
                     <th>FAIXA</th>
                     <th>STATUS</th>
-                    <th>MÉRITOS</th>
-                    <th>PENALIDADES</th>
-                    <th>ÚLTIMA ATUALIZAÇÃO</th>
                     <th>AÇÕES</th>
                   </tr>
                 </thead>
                 <tbody>
                   {adminCitizens.length === 0 ? (
                     <tr>
-                      <td colSpan="9" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Nenhum cidadão indexado encontrado.</td>
+                      <td colSpan="8" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Nenhum usuário encontrado.</td>
                     </tr>
                   ) : (
                     adminCitizens.map(cit => {
                       const tier = getTierDetails(cit.current_score);
                       return (
                         <tr key={cit.id}>
-                          <td className="text-gold">@{cit.username}</td>
                           <td>
-                            <span style={{ fontSize: '11px' }}>{cit.email || 'Sem email'}</span><br />
-                            <span style={{ fontSize: '11px' }} className="text-muted">{cit.celular || 'Sem celular'}</span>
+                            {cit.avatar_url ? (
+                              <img src={cit.avatar_url} alt="Avatar" className="table-user-avatar" />
+                            ) : (
+                              <div className="table-avatar-placeholder">{cit.username.charAt(0).toUpperCase()}</div>
+                            )}
+                          </td>
+                          <td>
+                            <span className="text-gold">@{cit.username}</span><br />
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{cit.email || 'Sem e-mail'}</span>
+                          </td>
+                          <td>
+                            <span className={`role-badge role-${cit.role_name}`}>
+                              {cit.role_name === 'admin' ? 'ADMINISTRADOR' : 'USUÁRIO'}
+                            </span>
+                          </td>
+                          <td>
+                            <span className="hierarchy-title-badge">
+                              {cit.hierarchy_title || (cit.role_name === 'admin' ? 'Administrador' : 'Usuário')}
+                            </span>
                           </td>
                           <td className="font-hero text-success">{cit.current_score}</td>
                           <td>
@@ -1143,11 +1337,9 @@ function App() {
                             </span>
                           </td>
                           <td><span className={`status-badge status-${cit.status}`}>{cit.status.toUpperCase()}</span></td>
-                          <td className="text-success font-hero">{cit.rewards_count}</td>
-                          <td className="text-warning font-hero">{cit.penalties_count}</td>
-                          <td style={{ fontSize: '11px' }}>{cit.updated_at ? new Date(cit.updated_at).toLocaleDateString('pt-BR') : 'Sem registro'}</td>
-                          <td>
-                            <button className="sim-btn admin" onClick={() => setDetailCitizenId(cit.id)}>DETALHAR</button>
+                          <td style={{ display: 'flex', gap: '6px' }}>
+                            <button className="sim-btn admin" onClick={() => openAdminEditUserModal(cit)}>EDITAR</button>
+                            <button className="sim-btn operator" onClick={() => setDetailCitizenId(cit.id)}>DETALHAR</button>
                           </td>
                         </tr>
                       );
@@ -1174,39 +1366,34 @@ function App() {
           </section>
         )}
 
-        {/* ========================================== */}
-        // ADMIN DETALHE DO CIDADÃO INDIVIDUAL
-        {/* ========================================== */}
-        {detailCitizenId !== null && detailCitizenData && (
+        {/* DETALHE DO USUÁRIO INDIVIDUAL (ADMIN) */}
+        {detailCitizenId !== null && detailCitizenData && userRole === 'admin' && (
           <section className="tab-pane active">
             <button className="state-btn outline back-btn" onClick={() => setDetailCitizenId(null)}>← VOLTAR PARA A LISTA</button>
 
             <div className="bento-grid" style={{ marginTop: '20px' }}>
-              {/* Painel de Controle Ficha */}
               <div className="bento-card col-4">
-                <h3 className="card-title">FICHA DE CONTROLE CÍVICO</h3>
+                <h3 className="card-title">FICHA DO USUÁRIO</h3>
                 <div style={{ marginTop: '15px' }}>
                   <div className="detail-row">
                     <span className="label">NICKNAME</span>
                     <span className="value text-gold" style={{ fontSize: '18px' }}>@{detailCitizenData.citizen.username}</span>
                   </div>
                   <div className="detail-row">
+                    <span className="label">NÍVEL BASE</span>
+                    <span className="value">{detailCitizenData.citizen.role_name === 'admin' ? 'ADMINISTRADOR' : 'USUÁRIO'}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="label">TÍTULO DE HIERARQUIA</span>
+                    <span className="value hierarchy-title-badge">{detailCitizenData.citizen.hierarchy_title || 'Usuário'}</span>
+                  </div>
+                  <div className="detail-row">
                     <span className="label">E-MAIL DO REGISTRO</span>
                     <span className="value">{detailCitizenData.citizen.email || 'Nenhum'}</span>
                   </div>
                   <div className="detail-row">
-                    <span className="label">CONTATO TELEFÔNICO</span>
-                    <span className="value">{detailCitizenData.citizen.celular || 'Nenhum'}</span>
-                  </div>
-                  <div className="detail-row">
                     <span className="label">STATUS CIVIL</span>
                     <span className={`value status-${detailCitizenData.citizen.status}`}>{detailCitizenData.citizen.status.toUpperCase()}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="label">FAIXA ILC ATUAL</span>
-                    <span className="status-badge" style={{ background: `${detailCitizenData.tier.color}20`, color: detailCitizenData.tier.color, border: `1px solid ${detailCitizenData.tier.color}` }}>
-                      {detailCitizenData.tier.name}
-                    </span>
                   </div>
                   <div className="detail-row" style={{ marginTop: '15px' }}>
                     <span className="label">PONTUAÇÃO ATUAL ILC</span>
@@ -1214,16 +1401,15 @@ function App() {
                   </div>
                 </div>
 
-                <div className="action-divider">MODIFICAR PRIVILÉGIOS</div>
+                <div className="action-divider">MODIFICAR STATUS</div>
                 <div className="status-actions">
                   <button className="state-btn success" onClick={() => changeCitizenStatus('active')}>ATIVAR CONTA</button>
                   <button className="state-btn warning" onClick={() => changeCitizenStatus('blocked')}>BLOQUEAR ACESSO</button>
                 </div>
               </div>
 
-              {/* Histograma e Ações */}
               <div className="bento-card col-8">
-                <h3 className="card-title">EVOLUÇÃO HISTÓRICA DO CIDADÃO</h3>
+                <h3 className="card-title">EVOLUÇÃO HISTÓRICA</h3>
                 <div className="chart-container" style={{ height: '180px', marginBottom: '20px' }}>
                   <ScoreChart history={detailCitizenData.history} />
                 </div>
@@ -1238,70 +1424,29 @@ function App() {
                   </select>
                   <button className="state-btn primary gold-glow" onClick={handleGrantManualCertificate}>CONCEDER TÍTULO</button>
                 </div>
-
-                <h3 className="card-title" style={{ marginTop: '30px' }}>CRONOLOGIA DO CIDADÃO</h3>
-                <div className="table-container" style={{ marginTop: '10px' }}>
-                  <table className="state-table">
-                    <thead>
-                      <tr>
-                        <th>DATA</th>
-                        <th>TIPO</th>
-                        <th>PONTOS</th>
-                        <th>DESCRIÇÃO</th>
-                        <th>STATUS</th>
-                        <th>OPERADOR</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detailCitizenData.history.length === 0 ? (
-                        <tr>
-                          <td colSpan="6" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Sem registros cronológicos.</td>
-                        </tr>
-                      ) : (
-                        detailCitizenData.history.map(ev => {
-                          const ptsClass = ev.points_delta > 0 ? 'text-success' : 'text-warning';
-                          return (
-                            <tr key={ev.id}>
-                              <td>{new Date(ev.occurred_at).toLocaleDateString('pt-BR')}</td>
-                              <td className="text-gold">{ev.type_name}</td>
-                              <td className={`${ptsClass} font-hero`}>
-                                {ev.points_delta > 0 ? `+${ev.points_delta}` : ev.points_delta}
-                              </td>
-                              <td>{ev.description}</td>
-                              <td><span className={`badge-status badge-${ev.status}`}>{ev.status.toUpperCase()}</span></td>
-                              <td>{ev.approved_by_name || 'Automação'}</td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
               </div>
             </div>
           </section>
         )}
 
-        {/* ========================================== */}
-        // ADMIN PENDING APPROVALS QUEUE
-        {/* ========================================== */}
-        {activeTab === 'adm-approvals' && adminMetrics && (
+        {/* FILA DE APROVAÇÕES PENDENTES */}
+        {activeTab === 'adm-approvals' && adminMetrics && userRole === 'admin' && (
           <section className="tab-pane active">
             <div className="section-heading" style={{ marginBottom: '20px' }}>
               <h2 className="section-title">FILA CENTRAL DE APROVAÇÕES</h2>
-              <p className="section-subtitle">Homologue ou invalide denúncias cívicas e solicitações especiais de bônus.</p>
+              <p className="section-subtitle">Homologue ou invalide denúncias e solicitações de bônus.</p>
             </div>
             <div className="table-container">
               <table className="state-table">
                 <thead>
                   <tr>
-                    <th>DATA DE REGISTRO</th>
-                    <th>CIDADÃO AFETADO</th>
+                    <th>DATA</th>
+                    <th>USUÁRIO AFETADO</th>
                     <th>ATIVIDADE</th>
-                    <th>ILC IMPACTO</th>
+                    <th>IMPACTO</th>
                     <th>DESCRIÇÃO</th>
                     <th>COMPROVANTE</th>
-                    <th>AÇÕES DE DECRETO</th>
+                    <th>AÇÕES</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1323,7 +1468,7 @@ function App() {
                           {ev.evidence_url ? (
                             <a href={ev.evidence_url} target="_blank" rel="noreferrer" className="text-gold">Ver Anexo</a>
                           ) : (
-                            'Nenhuma evidência'
+                            'Sem anexo'
                           )}
                         </td>
                         <td style={{ display: 'flex', gap: '6px' }}>
@@ -1339,14 +1484,12 @@ function App() {
           </section>
         )}
 
-        {/* ========================================== */}
-        // ADMIN AUDIT LOGS
-        {/* ========================================== */}
-        {activeTab === 'adm-audit' && (
+        {/* LOGS DE AUDITORIA */}
+        {activeTab === 'adm-audit' && userRole === 'admin' && (
           <section className="tab-pane active">
             <div className="section-heading" style={{ marginBottom: '20px' }}>
               <h2 className="section-title">AUDITORIA DOS REGISTROS ESTATAIS</h2>
-              <p className="section-subtitle">Logs imutáveis de ações de comissários, alterações de lealdade e bloqueios.</p>
+              <p className="section-subtitle">Logs imutáveis de ações administrativas e alterações de usuários.</p>
             </div>
             <div className="table-container">
               <table className="state-table font-mono">
@@ -1356,26 +1499,22 @@ function App() {
                     <th>AUTOR</th>
                     <th>ENTIDADE</th>
                     <th>AÇÃO</th>
-                    <th>DADOS ANTIGOS</th>
                     <th>DADOS NOVOS</th>
                   </tr>
                 </thead>
                 <tbody>
                   {auditLogs.length === 0 ? (
                     <tr>
-                      <td colSpan="6" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Fila de auditoria vazia.</td>
+                      <td colSpan="5" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Sem logs de auditoria.</td>
                     </tr>
                   ) : (
                     auditLogs.map(log => (
                       <tr key={log.id}>
                         <td style={{ fontSize: '11px' }}>{new Date(log.created_at).toLocaleString('pt-BR')}</td>
-                        <td className="text-gold">{log.actor_name || 'Sistema/Automação'}</td>
+                        <td className="text-gold">{log.actor_name || 'Sistema'}</td>
                         <td style={{ color: 'var(--slate)' }}>{log.entity_name}</td>
                         <td style={{ fontWeight: '700' }}>{log.action}</td>
-                        <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {log.old_data ? JSON.stringify(log.old_data) : 'Nulo'}
-                        </td>
-                        <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <td style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {log.new_data ? JSON.stringify(log.new_data) : 'Nulo'}
                         </td>
                       </tr>
@@ -1388,18 +1527,98 @@ function App() {
         )}
 
       </main>
+
+      {/* MODAL ALTERAR FOTO E TÍTULO DA CARTEIRA (USUÁRIO) */}
+      <div className={`modal-overlay ${photoModalOpen ? 'active' : ''}`}>
+        <div className="modal-card">
+          <h2 className="modal-title">ALTERAR FOTO E DADOS DA CARTEIRA</h2>
+          <p className="modal-desc">Você pode carregar uma foto do seu computador, colar a URL direta da imagem ou utilizar sua foto do Google.</p>
+          <form onSubmit={handleUpdateProfile}>
+            <div className="form-group">
+              <label>TÍTULO PERSONALIZADO DA HIERARQUIA</label>
+              <input type="text" placeholder="ex: Operador de Campo, Auditor Cívico, Cidadão A" value={customTitleInput} onChange={e => setCustomTitleInput(e.target.value)} />
+            </div>
+
+            <div className="form-group">
+              <label>URL DA FOTO DE PERFIL</label>
+              <input type="text" placeholder="https://..." value={inputAvatarUrl} onChange={e => setInputAvatarUrl(e.target.value)} />
+            </div>
+
+            <div className="form-group">
+              <label>OU ENVIAR FOTO DO COMPUTADOR</label>
+              <input type="file" accept="image/*" onChange={handleFileUpload} className="file-input" />
+            </div>
+
+            {inputAvatarUrl && (
+              <div style={{ textAlign: 'center', margin: '15px 0' }}>
+                <span className="field-desc" style={{ display: 'block', marginBottom: '8px' }}>Pré-visualização:</span>
+                <img src={inputAvatarUrl} alt="Preview Modal" style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #B08A47' }} />
+              </div>
+            )}
+
+            <div className="form-buttons">
+              <button type="button" className="state-btn secondary" onClick={() => setPhotoModalOpen(false)}>CANCELAR</button>
+              <button type="submit" className="state-btn primary gold-glow">SALVAR NA CARTEIRA</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {/* MODAL EDIÇÃO DE USUÁRIO PELO ADMIN */}
+      <div className={`modal-overlay ${editUserModalOpen ? 'active' : ''}`}>
+        <div className="modal-card">
+          <h2 className="modal-title">EDITAR PERMISSÕES E TÍTULOS DO USUÁRIO</h2>
+          <p className="modal-desc">Configure o Nível de Acesso Base (Admin / Usuário) e defina o Título Personalizado da Hierarquia sem alterar as permissões rígidas.</p>
+          <form onSubmit={handleAdminSaveUserEdit}>
+            <div className="form-group">
+              <label>NICKNAME</label>
+              <input type="text" required value={editFormUsername} onChange={e => setEditFormUsername(e.target.value)} />
+            </div>
+
+            <div className="form-group">
+              <label>E-MAIL</label>
+              <input type="email" value={editFormEmail} onChange={e => setEditFormEmail(e.target.value)} />
+            </div>
+
+            <div className="form-group">
+              <label>NÍVEL DE ACESSO BASE *</label>
+              <select value={editFormRole} onChange={e => setEditFormRole(e.target.value)}>
+                <option value="usuario">Usuário (Permissão Padrão)</option>
+                <option value="admin">Administrador (Permissão Total)</option>
+              </select>
+              <span className="field-desc">Define as permissões de acesso às rotas do sistema.</span>
+            </div>
+
+            <div className="form-group">
+              <label>TÍTULO PERSONALIZADO DA HIERARQUIA *</label>
+              <input type="text" required placeholder="ex: Comissário Chefe, Operador de Campo, Auditor, Cidadão A" value={editFormTitle} onChange={e => setEditFormTitle(e.target.value)} />
+              <span className="field-desc">Título exibido na carteira e nos distintivos do usuário.</span>
+            </div>
+
+            <div className="form-group">
+              <label>URL DA FOTO DE PERFIL</label>
+              <input type="text" placeholder="https://..." value={editFormAvatar} onChange={e => setEditFormAvatar(e.target.value)} />
+            </div>
+
+            <div className="form-group">
+              <label>STATUS CIVIL</label>
+              <select value={editFormStatus} onChange={e => setEditFormStatus(e.target.value)}>
+                <option value="active">Ativo</option>
+                <option value="inactive">Inativo</option>
+                <option value="blocked">Bloqueado</option>
+              </select>
+            </div>
+
+            <div className="form-buttons">
+              <button type="button" className="state-btn secondary" onClick={() => setEditUserModalOpen(false)}>CANCELAR</button>
+              <button type="submit" className="state-btn primary gold-glow">SALVAR ALTERAÇÕES</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
     </div>
   );
-}
-
-// Retorna o rótulo adequado de identificação das permissões
-function getRoleLabel(role) {
-  switch (role) {
-    case 'admin': return 'Comissário Central';
-    case 'operator': return 'Operador Estatal';
-    case 'auditor': return 'Auditor de Lealdade';
-    default: return 'Cidadão';
-  }
 }
 
 export default App;

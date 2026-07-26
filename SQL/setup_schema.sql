@@ -21,7 +21,7 @@
 
 -- Criar Enums
 CREATE TYPE user_status AS ENUM ('active', 'inactive', 'blocked');
-CREATE TYPE role_name AS ENUM ('admin', 'operator', 'auditor', 'citizen');
+CREATE TYPE role_name AS ENUM ('admin', 'usuario');
 CREATE TYPE event_category AS ENUM ('reward', 'penalty');
 CREATE TYPE event_status AS ENUM ('pending', 'approved', 'rejected');
 
@@ -36,12 +36,14 @@ CREATE TABLE users (
     celular VARCHAR(50) UNIQUE,
     google_id VARCHAR(255) UNIQUE,
     password_hash VARCHAR(255),
+    hierarchy_title VARCHAR(150) DEFAULT 'Usuário', -- Título personalizado de hierarquia (ex: Comissário, Operador, Auditor, Cidadão Classe A)
+    avatar_url TEXT, -- Foto de perfil (Google OAuth ou upload customizado)
     status user_status NOT NULL DEFAULT 'active',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2. Tabela de Papéis/Roles
+-- 2. Tabela de Níveis de Acesso (Roles)
 CREATE TABLE roles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name role_name NOT NULL UNIQUE,
