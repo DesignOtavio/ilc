@@ -11,6 +11,8 @@ const GoogleStrategy = require('passport-google-oauth20').Strategy;
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', 1); // Confia em proxies reversos (Nginx/Easypanel/Cloudflare) para HTTPS e cookies
+
 app.use(express.json());
 
 // Sessão para suportar o fluxo OAuth do Google
@@ -18,7 +20,10 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'ilc-session-secret-fallback',
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: process.env.NODE_ENV === 'production', maxAge: 10 * 60 * 1000 } // 10min para o flow OAuth
+  cookie: {
+    secure: process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== 'false',
+    maxAge: 10 * 60 * 1000 // 10min para o flow OAuth
+  }
 }));
 
 app.use(passport.initialize());
@@ -56,13 +61,17 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     callbackURL: process.env.GOOGLE_CALLBACK_URL || '/api/auth/google/callback'
   }, async (accessToken, refreshToken, profile, done) => {
-    const avatar_url = profile.photos && profile.photos[0] ? profile.photos[0].value : (profile._json && profile._json.picture ? profile._json.picture : null);
-    return done(null, {
-      google_id: profile.id,
-      email: profile.emails && profile.emails[0] ? profile.emails[0].value : null,
-      name: profile.displayName,
-      avatar_url
-    });
+    try {
+      const avatar_url = profile.photos && profile.photos[0] ? profile.photos[0].value : (profile._json && profile._json.picture ? profile._json.picture : null);
+      return done(null, {
+        google_id: profile.id,
+        email: profile.emails && profile.emails[0] ? profile.emails[0].value : null,
+        name: profile.displayName,
+        avatar_url
+      });
+    } catch (err) {
+      return done(err);
+    }
   }));
 
   // Iniciar fluxo OAuth — redireciona para o Google
@@ -79,10 +88,10 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 
       // Verificar se já existe conta com esse google_id
       let userRes = await client.query(
-        `SELECT u.id, u.username, u.hierarchy_title, u.avatar_url, r.name as role
+        `SELECT u.id, u.username, u.hierarchy_title, u.avatar_url, COALESCE(r.name, 'usuario') as role
          FROM users u
-         JOIN user_roles ur ON u.id = ur.user_id
-         JOIN roles r ON ur.role_id = r.id
+         LEFT JOIN user_roles ur ON u.id = ur.user_id
+         LEFT JOIN roles r ON ur.role_id = r.id
          WHERE u.google_id = $1`,
         [google_id]
       );
@@ -121,7 +130,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       return res.redirect(`/?google_new=1&google_temp=${tempToken}`);
     } catch (err) {
       await client.query('ROLLBACK');
-      console.error('Erro no callback Google OAuth:', err.message);
+      console.error('❌ Erro interno no handleGoogleCallback:', err);
       return res.redirect('/?google_error=server');
     } finally {
       client.release();
@@ -131,12 +140,18 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   app.get('/api/auth/google/callback', (req, res, next) => {
     passport.authenticate('google', { session: false }, async (err, user, info) => {
       if (err) {
-        console.error('OAuth token exchange error:', err && err.message);
+        console.error('❌ OAuth token exchange error (Google Callback Error):', err.message || err);
+        if (err.oauthError) {
+          console.error('❌ Google oauthError details:', {
+            statusCode: err.oauthError.statusCode,
+            data: err.oauthError.data ? err.oauthError.data.toString() : null
+          });
+        }
         return res.redirect('/?google_error=server');
       }
 
       if (!user) {
-        console.warn('OAuth callback: no user from passport, info:', info);
+        console.warn('⚠️ OAuth callback: no user returned from passport. Info:', info);
         return res.redirect('/?google_error=1');
       }
 
@@ -144,7 +159,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       try {
         await handleGoogleCallback(req, res);
       } catch (handlerErr) {
-        console.error('Error handling Google callback:', handlerErr.message);
+        console.error('❌ Error handling Google callback:', handlerErr);
         return res.redirect('/?google_error=server');
       }
     })(req, res, next);
