@@ -219,6 +219,37 @@ async function ensureSchemaMigrations() {
       WHERE role_id IN (SELECT id FROM roles WHERE name IN ('operator', 'auditor', 'citizen'))
     `, [usuarioRoleId]);
   }
+
+  // Tabela de Eventos da Democracia
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS democracy_events (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      title VARCHAR(255) NOT NULL,
+      description TEXT,
+      location VARCHAR(255),
+      event_date TIMESTAMP WITH TIME ZONE NOT NULL,
+      category VARCHAR(50) NOT NULL DEFAULT 'cívico',
+      status VARCHAR(50) NOT NULL DEFAULT 'planejado',
+      max_participants INT,
+      registration_url TEXT,
+      created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Tabela de Participantes em Eventos da Democracia
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS democracy_event_participants (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      event_id UUID NOT NULL REFERENCES democracy_events(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      registered_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT unique_event_participant UNIQUE (event_id, user_id)
+    )
+  `);
+
+  console.log('✅ Migrações de schema concluídas (incluindo democracy_events).');
 }
 
 // Inicialização e Carga Base de Usuários (Se necessário)
@@ -791,6 +822,26 @@ app.put('/api/citizen/update-profile', authenticateToken, async (req, res) => {
 // Retrocompatibilidade para antiga rota update-nickname
 app.put('/api/citizen/update-nickname', authenticateToken, async (req, res) => {
   return app._router.handle({ ...req, url: '/api/citizen/update-profile', method: 'PUT' }, res);
+});
+
+// Logs de Auditoria do próprio usuário (read-only)
+app.get('/api/citizen/audit-logs', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const logsRes = await pool.query(
+      `SELECT al.id, al.entity_name, al.action, al.old_data, al.new_data, al.created_at,
+              u.username as actor_name
+       FROM audit_logs al
+       LEFT JOIN users u ON al.actor_user_id = u.id
+       WHERE al.actor_user_id = $1 OR al.entity_id = $1
+       ORDER BY al.created_at DESC
+       LIMIT 50`,
+      [userId]
+    );
+    res.json(logsRes.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao buscar logs de auditoria: ' + err.message });
+  }
 });
 
 
@@ -1369,6 +1420,215 @@ app.post('/api/admin/certificates/grant', authenticateToken, requireRole(['admin
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: 'Erro ao conceder certificado: ' + err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ==========================================
+// ROTAS DE EVENTOS DA DEMOCRACIA
+// ==========================================
+
+// Listar todos os eventos da democracia
+app.get('/api/democracy-events', authenticateToken, async (req, res) => {
+  try {
+    const eventsRes = await pool.query(`
+      SELECT
+        de.*,
+        u.username as creator_name,
+        u.hierarchy_title as creator_title,
+        u.avatar_url as creator_avatar,
+        (SELECT COUNT(*) FROM democracy_event_participants dep WHERE dep.event_id = de.id) as participant_count,
+        EXISTS(SELECT 1 FROM democracy_event_participants dep WHERE dep.event_id = de.id AND dep.user_id = $1) as is_registered
+      FROM democracy_events de
+      LEFT JOIN users u ON de.created_by = u.id
+      ORDER BY de.event_date ASC
+    `, [req.user.id]);
+    res.json(eventsRes.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao listar eventos da democracia: ' + err.message });
+  }
+});
+
+// Criar novo evento da democracia
+app.post('/api/democracy-events', authenticateToken, async (req, res) => {
+  const { title, description, location, event_date, category, status, max_participants, registration_url } = req.body;
+
+  if (!title || !event_date) {
+    return res.status(400).json({ error: 'Título e data do evento são obrigatórios.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const insertRes = await client.query(
+      `INSERT INTO democracy_events (title, description, location, event_date, category, status, max_participants, registration_url, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+      [
+        title.trim(),
+        description || null,
+        location || null,
+        event_date,
+        category || 'cívico',
+        status || 'planejado',
+        max_participants || null,
+        registration_url || null,
+        req.user.id
+      ]
+    );
+    const eventId = insertRes.rows[0].id;
+
+    await client.query(
+      `INSERT INTO audit_logs (actor_user_id, entity_name, entity_id, action, new_data)
+       VALUES ($1, 'democracy_events', $2, 'create_democracy_event', $3)`,
+      [req.user.id, eventId, JSON.stringify({ title, event_date, category, location })]
+    );
+
+    await client.query('COMMIT');
+    res.json({ success: true, message: 'Evento da democracia criado com sucesso.', event_id: eventId });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: 'Erro ao criar evento: ' + err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Editar evento da democracia (criador ou admin)
+app.put('/api/democracy-events/:id', authenticateToken, async (req, res) => {
+  const eventId = req.params.id;
+  const { title, description, location, event_date, category, status, max_participants, registration_url } = req.body;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const checkRes = await client.query('SELECT created_by FROM democracy_events WHERE id = $1', [eventId]);
+    if (checkRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Evento não encontrado.' });
+    }
+
+    const isOwner = checkRes.rows[0].created_by === req.user.id;
+    const isAdmin = req.user.role === 'admin';
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ error: 'Apenas o criador ou administrador pode editar este evento.' });
+    }
+
+    await client.query(
+      `UPDATE democracy_events
+       SET title = COALESCE($1, title),
+           description = COALESCE($2, description),
+           location = COALESCE($3, location),
+           event_date = COALESCE($4, event_date),
+           category = COALESCE($5, category),
+           status = COALESCE($6, status),
+           max_participants = COALESCE($7, max_participants),
+           registration_url = COALESCE($8, registration_url),
+           updated_at = NOW()
+       WHERE id = $9`,
+      [title || null, description || null, location || null, event_date || null, category || null, status || null, max_participants || null, registration_url || null, eventId]
+    );
+
+    await client.query(
+      `INSERT INTO audit_logs (actor_user_id, entity_name, entity_id, action, new_data)
+       VALUES ($1, 'democracy_events', $2, 'update_democracy_event', $3)`,
+      [req.user.id, eventId, JSON.stringify({ title, status, event_date })]
+    );
+
+    await client.query('COMMIT');
+    res.json({ success: true, message: 'Evento atualizado com sucesso.' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: 'Erro ao atualizar evento: ' + err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Excluir evento (admin ou criador)
+app.delete('/api/democracy-events/:id', authenticateToken, async (req, res) => {
+  const eventId = req.params.id;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const checkRes = await client.query('SELECT created_by, title FROM democracy_events WHERE id = $1', [eventId]);
+    if (checkRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Evento não encontrado.' });
+    }
+
+    const isOwner = checkRes.rows[0].created_by === req.user.id;
+    const isAdmin = req.user.role === 'admin';
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ error: 'Apenas o criador ou administrador pode excluir este evento.' });
+    }
+
+    await client.query('DELETE FROM democracy_events WHERE id = $1', [eventId]);
+
+    await client.query(
+      `INSERT INTO audit_logs (actor_user_id, entity_name, entity_id, action, new_data)
+       VALUES ($1, 'democracy_events', $2, 'delete_democracy_event', $3)`,
+      [req.user.id, eventId, JSON.stringify({ title: checkRes.rows[0].title })]
+    );
+
+    await client.query('COMMIT');
+    res.json({ success: true, message: 'Evento excluído com sucesso.' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: 'Erro ao excluir evento: ' + err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Inscrever-se em um evento
+app.post('/api/democracy-events/:id/register', authenticateToken, async (req, res) => {
+  const eventId = req.params.id;
+  const userId = req.user.id;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const eventRes = await client.query('SELECT id, title, max_participants FROM democracy_events WHERE id = $1', [eventId]);
+    if (eventRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Evento não encontrado.' });
+    }
+
+    const event = eventRes.rows[0];
+
+    if (event.max_participants) {
+      const countRes = await client.query('SELECT COUNT(*) FROM democracy_event_participants WHERE event_id = $1', [eventId]);
+      if (parseInt(countRes.rows[0].count) >= event.max_participants) {
+        return res.status(400).json({ error: 'Vagas esgotadas para este evento.' });
+      }
+    }
+
+    // Verificar se já está inscrito
+    const alreadyRes = await client.query(
+      'SELECT id FROM democracy_event_participants WHERE event_id = $1 AND user_id = $2',
+      [eventId, userId]
+    );
+
+    if (alreadyRes.rows.length > 0) {
+      // Desinscrever
+      await client.query('DELETE FROM democracy_event_participants WHERE event_id = $1 AND user_id = $2', [eventId, userId]);
+      await client.query('COMMIT');
+      return res.json({ success: true, message: 'Inscrição cancelada com sucesso.', registered: false });
+    }
+
+    await client.query(
+      'INSERT INTO democracy_event_participants (event_id, user_id) VALUES ($1, $2)',
+      [eventId, userId]
+    );
+
+    await client.query('COMMIT');
+    res.json({ success: true, message: `Inscrição confirmada no evento: ${event.title}`, registered: true });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: 'Erro ao processar inscrição: ' + err.message });
   } finally {
     client.release();
   }

@@ -79,6 +79,22 @@ function App() {
   const [certificatesList, setCertificatesList] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
 
+  // Logs de auditoria do usuário comum
+  const [citizenAuditLogs, setCitizenAuditLogs] = useState([]);
+
+  // Eventos da Democracia
+  const [democracyEvents, setDemocracyEvents] = useState([]);
+  const [newEventTitle, setNewEventTitle] = useState('');
+  const [newEventDescription, setNewEventDescription] = useState('');
+  const [newEventLocation, setNewEventLocation] = useState('');
+  const [newEventDate, setNewEventDate] = useState('');
+  const [newEventCategory, setNewEventCategory] = useState('cívico');
+  const [newEventStatus, setNewEventStatus] = useState('planejado');
+  const [newEventMaxParticipants, setNewEventMaxParticipants] = useState('');
+  const [newEventUrl, setNewEventUrl] = useState('');
+  const [democracyFormOpen, setDemocracyFormOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState(null);
+
   // Login Form
   const [authTab, setAuthTab] = useState('login');
   const [loginId, setLoginId] = useState('');
@@ -156,8 +172,12 @@ function App() {
   useEffect(() => {
     if (!token) return;
 
-    if (activeTab === 'cit-dashboard' || activeTab === 'cit-certificates' || activeTab === 'cit-history' || activeTab === 'cit-settings') {
+    if (activeTab === 'cit-dashboard') {
       fetchCitizenData();
+    } else if (activeTab === 'cit-audit') {
+      fetchCitizenAuditLogs();
+    } else if (activeTab === 'democracy-events') {
+      fetchDemocracyEvents();
     } else if (activeTab === 'adm-dashboard') {
       fetchAdminMetrics();
       fetchAdminCitizens();
@@ -167,6 +187,8 @@ function App() {
       fetchAdminMetrics();
     } else if (activeTab === 'adm-audit') {
       fetchAdminAuditLogs();
+    } else if (activeTab === 'adm-democracy-events') {
+      fetchDemocracyEvents();
     }
   }, [activeTab, token, adminPage, adminSearch, adminFilterStatus, adminFilterTier]);
 
@@ -208,6 +230,134 @@ function App() {
       }
     } catch (err) {
       showToast('Falha de Dados', err.message, 'warning');
+    }
+  };
+
+  const fetchCitizenAuditLogs = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/citizen/audit-logs`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await parseApiResponse(res);
+      if (!res.ok) throw new Error(data.error);
+      setCitizenAuditLogs(data);
+    } catch (err) {
+      showToast('Erro de Auditoria', err.message, 'warning');
+    }
+  };
+
+  // REQUISIÇÕES: EVENTOS DA DEMOCRACIA
+  const fetchDemocracyEvents = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/democracy-events`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await parseApiResponse(res);
+      if (!res.ok) throw new Error(data.error);
+      setDemocracyEvents(data);
+    } catch (err) {
+      showToast('Erro nos Eventos', err.message, 'warning');
+    }
+  };
+
+  const resetEventForm = () => {
+    setNewEventTitle('');
+    setNewEventDescription('');
+    setNewEventLocation('');
+    setNewEventDate('');
+    setNewEventCategory('cívico');
+    setNewEventStatus('planejado');
+    setNewEventMaxParticipants('');
+    setNewEventUrl('');
+    setEditingEvent(null);
+    setDemocracyFormOpen(false);
+  };
+
+  const openEditEventForm = (ev) => {
+    setEditingEvent(ev);
+    setNewEventTitle(ev.title);
+    setNewEventDescription(ev.description || '');
+    setNewEventLocation(ev.location || '');
+    // Formatar para datetime-local input
+    const dt = new Date(ev.event_date);
+    const local = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    setNewEventDate(local);
+    setNewEventCategory(ev.category || 'cívico');
+    setNewEventStatus(ev.status || 'planejado');
+    setNewEventMaxParticipants(ev.max_participants || '');
+    setNewEventUrl(ev.registration_url || '');
+    setDemocracyFormOpen(true);
+  };
+
+  const handleSubmitDemocracyEvent = async (e) => {
+    e.preventDefault();
+    if (!newEventTitle || !newEventDate) {
+      showToast('Validação', 'Título e data são obrigatórios.', 'warning');
+      return;
+    }
+
+    try {
+      const method = editingEvent ? 'PUT' : 'POST';
+      const url = editingEvent
+        ? `${API_BASE}/democracy-events/${editingEvent.id}`
+        : `${API_BASE}/democracy-events`;
+
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          title: newEventTitle,
+          description: newEventDescription,
+          location: newEventLocation,
+          event_date: newEventDate,
+          category: newEventCategory,
+          status: newEventStatus,
+          max_participants: newEventMaxParticipants ? parseInt(newEventMaxParticipants) : null,
+          registration_url: newEventUrl
+        })
+      });
+      const data = await parseApiResponse(res);
+      if (!res.ok) throw new Error(data.error);
+
+      showToast(editingEvent ? 'Evento Atualizado' : 'Evento Criado', data.message, 'success');
+      resetEventForm();
+      fetchDemocracyEvents();
+    } catch (err) {
+      showToast('Erro', err.message, 'warning');
+    }
+  };
+
+  const handleDeleteEvent = async (eventId) => {
+    if (!window.confirm('Tem certeza que deseja excluir este evento?')) return;
+    try {
+      const res = await fetch(`${API_BASE}/democracy-events/${eventId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await parseApiResponse(res);
+      if (!res.ok) throw new Error(data.error);
+      showToast('Evento Excluído', data.message, 'success');
+      fetchDemocracyEvents();
+    } catch (err) {
+      showToast('Erro ao Excluir', err.message, 'warning');
+    }
+  };
+
+  const handleRegisterEvent = async (eventId) => {
+    try {
+      const res = await fetch(`${API_BASE}/democracy-events/${eventId}/register`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await parseApiResponse(res);
+      if (!res.ok) throw new Error(data.error);
+      showToast('Inscrição', data.message, 'success');
+      fetchDemocracyEvents();
+    } catch (err) {
+      showToast('Erro de Inscrição', err.message, 'warning');
     }
   };
 
@@ -619,50 +769,6 @@ function App() {
     showToast('Sessão Encerrada', 'Retirada segura dos canais cívicos.', 'info');
   };
 
-  // Acesso rápido de simulação
-  const runSimLogin = async (id, password) => {
-    try {
-      const res = await fetch(`${API_BASE}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier: id, password })
-      });
-      const data = await parseApiResponse(res);
-      if (!res.ok) throw new Error(data.error);
-
-      setDetailCitizenId(null);
-      saveSession(data.token, data.role, data.username, data.hierarchy_title, data.avatar_url);
-      showToast('Troca de Perfil', `Simulação ativa como ${id}.`, 'info');
-    } catch (err) {
-      showToast('Falha no Simulador', err.message, 'warning');
-    }
-  };
-
-  const renderCitizenRecommendations = () => {
-    if (!citizenData || !citizenData.tier) return null;
-    const isLowTier = citizenData.tier.min_score < 4000;
-
-    const recs = isLowTier ? [
-      { name: 'Curso de Educação Cívica', desc: 'Realize o exame anual obrigatório de moralidade.', delta: '+250' },
-      { name: 'Doação de Sangue', desc: 'Contribua com o banco hospitalar oficial do Estado.', delta: '+100' },
-      { name: 'Trabalho Voluntário', desc: 'Engaje em tarefas de revitalização municipal.', delta: '+200' }
-    ] : [
-      { name: 'Serviço Militar Voluntário', desc: 'Conclua a adesão auxiliar nas forças estatais.', delta: '+500' },
-      { name: 'Denunciar Atividade Ilícita', desc: 'Informe corrupção ou crimes com comprovantes.', delta: '+300' },
-      { name: 'Campanha Nacional de Vacinação', desc: 'Ajude na organização local cívica.', delta: '+150' }
-    ];
-
-    return recs.map(rec => (
-      <div key={rec.name} className="rec-item">
-        <div className="rec-info">
-          <h4>{rec.name}</h4>
-          <p>{rec.desc}</p>
-        </div>
-        <span className="rec-delta">{rec.delta}</span>
-      </div>
-    ));
-  };
-
   const getTierDetails = (score) => {
     if (score < 2000) return { name: 'Vigilância Máxima', color: '#8A3D2F' };
     if (score < 4000) return { name: 'Restrito', color: '#4E6E8E' };
@@ -670,6 +776,28 @@ function App() {
     if (score < 8000) return { name: 'Cidadão Exemplar', color: '#556B2F' };
     if (score < 9500) return { name: 'Herói Cívico', color: '#73B33A' };
     return { name: 'Alto Comando Honorário', color: '#B08A47' };
+  };
+
+  const getCategoryIcon = (cat) => {
+    const icons = {
+      'cívico': '🏛️',
+      'cultural': '🎭',
+      'político': '⚖️',
+      'comunitário': '🤝',
+      'educacional': '📚',
+      'ambiental': '🌿'
+    };
+    return icons[cat] || '📋';
+  };
+
+  const getStatusColor = (status) => {
+    const colors = {
+      'planejado': '#4E6E8E',
+      'em andamento': '#73B33A',
+      'concluído': '#B08A47',
+      'cancelado': '#8A3D2F'
+    };
+    return colors[status] || '#B9B19A';
   };
 
   // TELA DE AUTENTICAÇÃO
@@ -728,15 +856,15 @@ function App() {
               </div>
               <div className="form-group">
                 <label>E-MAIL (OPCIONAL)</label>
-                <input type="email" placeholder="cidadao@patria.gov.br" value={regEmail} onChange={e => setRegEmail(e.target.value)} />
+                <input type="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} />
               </div>
               <div className="form-group">
                 <label>NÚMERO DE CELULAR (OPCIONAL)</label>
-                <input type="text" placeholder="+5511999999999" value={regCelular} onChange={e => setRegCelular(e.target.value)} />
+                <input type="text" value={regCelular} onChange={e => setRegCelular(e.target.value)} />
               </div>
               <div className="form-group">
                 <label>SENHA DE ACESSO *</label>
-                <input type="password" placeholder="Mínimo 6 caracteres" required value={regPass} onChange={e => setRegPass(e.target.value)} />
+                <input type="password" required value={regPass} onChange={e => setRegPass(e.target.value)} />
               </div>
               <button type="submit" className="state-btn success success-glow">SOLICITAR REGISTRO CÍVICO</button>
             </form>
@@ -762,7 +890,7 @@ function App() {
             <form onSubmit={handleGoogleSignupSubmit}>
               <div className="form-group">
                 <label>NICKNAME CÍVICO *</label>
-                <input type="text" required placeholder="ex: joao_google" value={googleNickname} onChange={e => setGoogleNickname(e.target.value)} />
+                <input type="text" required value={googleNickname} onChange={e => setGoogleNickname(e.target.value)} />
               </div>
               <div className="form-buttons">
                 <button type="button" className="state-btn secondary" onClick={() => setGoogleModalActive(false)}>CANCELAR</button>
@@ -778,23 +906,12 @@ function App() {
   const activeAvatar = (citizenData && citizenData.profile && citizenData.profile.avatar_url) || userAvatarUrl;
   const activeHierarchyTitle = (citizenData && citizenData.profile && citizenData.profile.hierarchy_title) || userHierarchyTitle || (userRole === 'admin' ? 'Administrador' : 'Usuário Cívico');
 
+  // Determinar qual aba de Eventos é a ativa (usuário usa 'democracy-events', admin usa 'adm-democracy-events')
+  const democracyTabKey = userRole === 'admin' ? 'adm-democracy-events' : 'democracy-events';
+  const isDemocracyTab = activeTab === 'democracy-events' || activeTab === 'adm-democracy-events';
+
   return (
     <div id="app-container" className="app-container active">
-      {/* Simulador Toolbar */}
-      <div id="sim-toolbar" className="sim-toolbar">
-        <div className="sim-brand">
-          <span className="sim-tag">AMBIENTE DE SIMULAÇÃO DE NÍVEIS</span>
-        </div>
-        <div className="sim-actions">
-          <span className="sim-label">Simular Login:</span>
-          <button className="sim-btn admin" onClick={() => runSimLogin('comissario_otavio', 'admin123')}>Admin (Comissário)</button>
-          <button className="sim-btn operator" onClick={() => runSimLogin('operador_civil', 'usuario123')}>Usuário (Operador)</button>
-          <button className="sim-btn auditor" onClick={() => runSimLogin('auditor_patria', 'usuario123')}>Usuário (Auditor)</button>
-          <button className="sim-btn citizen-high" onClick={() => runSimLogin('elena_rostova', 'usuario123')}>Usuário (Inspetora)</button>
-          <button className="sim-btn citizen-mid" onClick={() => runSimLogin('joao_silva', 'usuario123')}>Usuário (Comum)</button>
-        </div>
-      </div>
-
       {/* Toast Alert list */}
       <div className="toast-container">
         {toasts.map(t => (
@@ -839,10 +956,9 @@ function App() {
       <nav className="main-nav">
         {userRole !== 'admin' ? (
           <div className="nav-group active">
-            <button className={`nav-tab ${activeTab === 'cit-dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('cit-dashboard')}>CARTEIRA DE IDENTIDADE</button>
-            <button className={`nav-tab ${activeTab === 'cit-certificates' ? 'active' : ''}`} onClick={() => setActiveTab('cit-certificates')}>MEUS CERTIFICADOS</button>
-            <button className={`nav-tab ${activeTab === 'cit-history' ? 'active' : ''}`} onClick={() => setActiveTab('cit-history')}>HISTÓRICO DE AÇÕES</button>
-            <button className={`nav-tab ${activeTab === 'cit-settings' ? 'active' : ''}`} onClick={() => setActiveTab('cit-settings')}>CONFIGURAÇÕES DA CONTA</button>
+            <button className={`nav-tab ${activeTab === 'cit-dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('cit-dashboard')}>MINHA CARTEIRA</button>
+            <button className={`nav-tab ${activeTab === 'cit-audit' ? 'active' : ''}`} onClick={() => setActiveTab('cit-audit')}>LOGS DE AUDITORIA</button>
+            <button className={`nav-tab ${activeTab === 'democracy-events' ? 'active' : ''}`} onClick={() => setActiveTab('democracy-events')}>EVENTOS DA DEMOCRACIA</button>
           </div>
         ) : (
           <div className="nav-group active">
@@ -851,6 +967,7 @@ function App() {
             <button className={`nav-tab ${activeTab === 'adm-approvals' ? 'active' : ''}`} onClick={() => { setDetailCitizenId(null); setActiveTab('adm-approvals'); }}>APROVAÇÕES PENDENTES</button>
             <button className={`nav-tab ${activeTab === 'adm-audit' ? 'active' : ''}`} onClick={() => { setDetailCitizenId(null); setActiveTab('adm-audit'); }}>LOGS DE AUDITORIA</button>
             <button className={`nav-tab ${activeTab === 'cit-dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('cit-dashboard')}>MINHA CARTEIRA</button>
+            <button className={`nav-tab ${activeTab === 'adm-democracy-events' ? 'active' : ''}`} onClick={() => { setDetailCitizenId(null); setActiveTab('adm-democracy-events'); fetchDemocracyEvents(); }}>EVENTOS DA DEMOCRACIA</button>
           </div>
         )}
       </nav>
@@ -900,7 +1017,6 @@ function App() {
                         <span className="value">@{citizenData.profile.username}</span>
                       </div>
                       
-                      {/* TÍTULO PERSONALIZADO DA HIERARQUIA */}
                       <div className="detail-row">
                         <span className="label">TÍTULO DE HIERARQUIA</span>
                         <span className="value hierarchy-title-badge">{activeHierarchyTitle}</span>
@@ -965,19 +1081,33 @@ function App() {
                 </div>
 
                 <div className="tier-info-panel">
-                  <h4 className="tier-info-title text-gold">RESTRICÕES / PRIVILÉGIOS ATUAIS:</h4>
+                  <h4 className="tier-info-title text-gold">RESTRIÇÕES / PRIVILÉGIOS ATUAIS:</h4>
                   <p className="tier-info-desc">{citizenData.tier ? citizenData.tier.privileges : 'Direitos padrão de cidadania.'}</p>
                 </div>
               </div>
 
-              {/* RECOMENDAÇÕES */}
+              {/* ÚLTIMAS ATIVIDADES DO BD */}
               <div className="bento-card col-3">
                 <div className="card-head">
-                  <h3 className="card-title">FORTALECIMENTO DO SCORE</h3>
-                  <p className="card-subtitle">Ações recomendadas para alavancar a pontuação.</p>
+                  <h3 className="card-title">ÚLTIMAS ATIVIDADES</h3>
+                  <p className="card-subtitle">Registros mais recentes do seu histórico.</p>
                 </div>
                 <div className="recommendations-list">
-                  {renderCitizenRecommendations()}
+                  {citizenData.history && citizenData.history.length > 0 ? (
+                    citizenData.history.slice(0, 4).map(ev => (
+                      <div key={ev.id} className="rec-item">
+                        <div className="rec-info">
+                          <h4>{ev.type_name}</h4>
+                          <p>{ev.description || 'Sem descrição'}</p>
+                        </div>
+                        <span className={`rec-delta ${ev.points_delta > 0 ? 'text-success' : 'text-warning'}`}>
+                          {ev.points_delta > 0 ? `+${ev.points_delta}` : ev.points_delta}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <p style={{ color: 'var(--text-muted)', fontSize: '13px', padding: '10px 0' }}>Nenhuma atividade registrada ainda.</p>
+                  )}
                 </div>
               </div>
 
@@ -996,61 +1126,41 @@ function App() {
           </section>
         )}
 
-        {/* CERTIFICADOS */}
-        {activeTab === 'cit-certificates' && citizenData && (
+        {/* ========================================== */}
+        {/* LOGS DE AUDITORIA DO USUÁRIO COMUM         */}
+        {/* ========================================== */}
+        {activeTab === 'cit-audit' && (
           <section className="tab-pane active">
             <div className="section-heading" style={{ marginBottom: '20px' }}>
-              <h2 className="section-title">CÉDULAS DE MÉRITO NACIONAL</h2>
-              <p className="section-subtitle">Conquistas oficiais outorgadas por acúmulo de méritos.</p>
-            </div>
-            <CertificatesGrid certificates={citizenData.certificates} />
-          </section>
-        )}
-
-        {/* HISTÓRICO */}
-        {activeTab === 'cit-history' && citizenData && (
-          <section className="tab-pane active">
-            <div className="section-heading" style={{ marginBottom: '20px' }}>
-              <h2 className="section-title">CRONOLOGIA DE COMPORTAMENTO</h2>
-              <p className="section-subtitle">Todos os registros de bônus, penalidades e homologações.</p>
+              <h2 className="section-title">MEUS LOGS DE AUDITORIA</h2>
+              <p className="section-subtitle">Registro imutável de todas as ações associadas à sua conta.</p>
             </div>
             <div className="table-container">
-              <table className="state-table">
+              <table className="state-table font-mono">
                 <thead>
                   <tr>
-                    <th>DATA</th>
-                    <th>CATEGORIA</th>
-                    <th>TIPO DE ATIVIDADE</th>
-                    <th>VARIAÇÃO</th>
-                    <th>DESCRIÇÃO/EVIDÊNCIA</th>
-                    <th>STATUS</th>
+                    <th>DATA E HORA</th>
+                    <th>ENTIDADE</th>
+                    <th>AÇÃO</th>
+                    <th>DADOS REGISTRADOS</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {citizenData.history.length === 0 ? (
+                  {citizenAuditLogs.length === 0 ? (
                     <tr>
-                      <td colSpan="6" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Sem registros de histórico.</td>
+                      <td colSpan="4" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Nenhum log de auditoria encontrado para sua conta.</td>
                     </tr>
                   ) : (
-                    citizenData.history.map(ev => {
-                      const isReward = ev.category === 'reward';
-                      return (
-                        <tr key={ev.id}>
-                          <td>{new Date(ev.occurred_at).toLocaleDateString('pt-BR')}</td>
-                          <td>
-                            <span className={`status-badge ${isReward ? 'badge-reward' : 'badge-penalty'}`}>
-                              {isReward ? 'MÉRITO' : 'PENALIDADE'}
-                            </span>
-                          </td>
-                          <td className="text-gold">{ev.type_name}</td>
-                          <td className={`${isReward ? 'text-success' : 'text-warning'} font-hero`}>
-                            {ev.points_delta > 0 ? `+${ev.points_delta}` : ev.points_delta}
-                          </td>
-                          <td>{ev.description}</td>
-                          <td><span className={`badge-status badge-${ev.status}`}>{ev.status.toUpperCase()}</span></td>
-                        </tr>
-                      );
-                    })
+                    citizenAuditLogs.map(log => (
+                      <tr key={log.id}>
+                        <td style={{ fontSize: '11px' }}>{new Date(log.created_at).toLocaleString('pt-BR')}</td>
+                        <td style={{ color: 'var(--slate)' }}>{log.entity_name}</td>
+                        <td style={{ fontWeight: '700', color: 'var(--gold)' }}>{log.action}</td>
+                        <td style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '11px' }}>
+                          {log.new_data ? JSON.stringify(log.new_data) : '—'}
+                        </td>
+                      </tr>
+                    ))
                   )}
                 </tbody>
               </table>
@@ -1058,60 +1168,185 @@ function App() {
           </section>
         )}
 
-        {/* CONFIGURAÇÕES DE PERFIL DA CONTA */}
-        {activeTab === 'cit-settings' && (
+        {/* ========================================== */}
+        {/* EVENTOS DA DEMOCRACIA (USUÁRIO / ADMIN)    */}
+        {/* ========================================== */}
+        {isDemocracyTab && (
           <section className="tab-pane active">
-            <div className="section-heading" style={{ marginBottom: '20px' }}>
-              <h2 className="section-title">CONFIGURAÇÕES DA CARTEIRA E PERFIL</h2>
-              <p className="section-subtitle">Personalize sua foto de perfil, nickname e título de hierarquia exibido.</p>
+            <div className="section-heading" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <h2 className="section-title">EVENTOS DA DEMOCRACIA</h2>
+                <p className="section-subtitle">Agende e participe de eventos cívicos, culturais e comunitários oficiais.</p>
+              </div>
+              {!democracyFormOpen && (
+                <button className="state-btn primary gold-glow" onClick={() => { resetEventForm(); setDemocracyFormOpen(true); }}>
+                  + AGENDAR NOVO EVENTO
+                </button>
+              )}
             </div>
 
-            <div className="bento-grid">
-              <div className="bento-card col-6">
-                <h3 className="card-title">DADOS VISÍVEIS DA CARTEIRA</h3>
-                <form onSubmit={handleUpdateProfile} className="form-dense" style={{ marginTop: '15px' }}>
-                  <div className="form-group">
-                    <label>COGNOME (NICKNAME)</label>
-                    <input type="text" required value={newNickname} onChange={e => setNewNickname(e.target.value)} />
-                    <span className="field-desc">Identificador único no sistema.</span>
+            {/* FORMULÁRIO DE CRIAÇÃO / EDIÇÃO DE EVENTO */}
+            {democracyFormOpen && (
+              <div className="bento-card col-12" style={{ marginBottom: '24px' }}>
+                <h3 className="card-title">{editingEvent ? 'EDITAR EVENTO' : 'AGENDAR NOVO EVENTO DA DEMOCRACIA'}</h3>
+                <form onSubmit={handleSubmitDemocracyEvent} className="form-dense" style={{ marginTop: '18px' }}>
+                  <div className="bento-grid" style={{ gap: '16px' }}>
+                    <div className="bento-card col-6" style={{ padding: '0', background: 'none', border: 'none', boxShadow: 'none' }}>
+                      <div className="form-group">
+                        <label>TÍTULO DO EVENTO *</label>
+                        <input type="text" required value={newEventTitle} onChange={e => setNewEventTitle(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>DATA E HORA *</label>
+                        <input type="datetime-local" required value={newEventDate} onChange={e => setNewEventDate(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>LOCAL / LOCALIZAÇÃO</label>
+                        <input type="text" value={newEventLocation} onChange={e => setNewEventLocation(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>LINK DE INSCRIÇÃO (OPCIONAL)</label>
+                        <input type="url" value={newEventUrl} onChange={e => setNewEventUrl(e.target.value)} />
+                      </div>
+                    </div>
+                    <div className="bento-card col-6" style={{ padding: '0', background: 'none', border: 'none', boxShadow: 'none' }}>
+                      <div className="form-group">
+                        <label>CATEGORIA</label>
+                        <select value={newEventCategory} onChange={e => setNewEventCategory(e.target.value)}>
+                          <option value="cívico">🏛️ Cívico</option>
+                          <option value="cultural">🎭 Cultural</option>
+                          <option value="político">⚖️ Político</option>
+                          <option value="comunitário">🤝 Comunitário</option>
+                          <option value="educacional">📚 Educacional</option>
+                          <option value="ambiental">🌿 Ambiental</option>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>STATUS DO EVENTO</label>
+                        <select value={newEventStatus} onChange={e => setNewEventStatus(e.target.value)}>
+                          <option value="planejado">Planejado</option>
+                          <option value="em andamento">Em Andamento</option>
+                          <option value="concluído">Concluído</option>
+                          <option value="cancelado">Cancelado</option>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>CAPACIDADE MÁXIMA (OPCIONAL)</label>
+                        <input type="number" min="1" value={newEventMaxParticipants} onChange={e => setNewEventMaxParticipants(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>DESCRIÇÃO DETALHADA</label>
+                        <textarea value={newEventDescription} onChange={e => setNewEventDescription(e.target.value)} rows="3" />
+                      </div>
+                    </div>
                   </div>
-
-                  <div className="form-group">
-                    <label>TÍTULO DE HIERARQUIA DESEJADO</label>
-                    <input type="text" placeholder="ex: Operador Sênior, Inspetor, Cidadão Ativo" value={customTitleInput} onChange={e => setCustomTitleInput(e.target.value)} />
-                    <span className="field-desc">Título personalizado exibido na sua Carteira de Identidade.</span>
+                  <div className="form-buttons" style={{ marginTop: '12px' }}>
+                    <button type="button" className="state-btn secondary" onClick={resetEventForm}>CANCELAR</button>
+                    <button type="submit" className="state-btn primary gold-glow">
+                      {editingEvent ? 'SALVAR ALTERAÇÕES' : 'PUBLICAR EVENTO'}
+                    </button>
                   </div>
-
-                  <div className="form-group">
-                    <label>FOTO DA CARTEIRA (URL OU BASE64)</label>
-                    <input type="text" placeholder="https://... ou escolha um arquivo abaixo" value={inputAvatarUrl} onChange={e => setInputAvatarUrl(e.target.value)} />
-                  </div>
-
-                  <div className="form-group">
-                    <label>OU SELECIONE FOTO DO SEU COMPUTADOR</label>
-                    <input type="file" accept="image/*" onChange={handleFileUpload} className="file-input" />
-                  </div>
-
-                  <button type="submit" className="state-btn primary gold-glow">SALVAR ALTERAÇÕES DA CARTEIRA</button>
                 </form>
               </div>
+            )}
 
-              <div className="bento-card col-6 flex-col justify-center align-center">
-                <h3 className="card-title" style={{ marginBottom: '15px' }}>PRÉ-VISUALIZAÇÃO DA FOTO</h3>
-                <div className="card-photo-box large">
-                  {inputAvatarUrl ? (
-                    <img src={inputAvatarUrl} alt="Preview Foto" className="cit-id-photo" />
-                  ) : (
-                    <div className="cit-avatar-placeholder">
-                      <svg viewBox="0 0 24 24" width="64" height="64" fill="#B08A47">
-                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-                      </svg>
-                    </div>
-                  )}
-                </div>
-                <span className="text-gold" style={{ marginTop: '15px', fontWeight: 'bold' }}>{customTitleInput || activeHierarchyTitle}</span>
+            {/* LISTAGEM DE EVENTOS */}
+            {democracyEvents.length === 0 ? (
+              <div className="bento-card col-12" style={{ textAlign: 'center', padding: '48px' }}>
+                <p style={{ fontSize: '48px', marginBottom: '16px' }}>🗳️</p>
+                <h3 className="card-title">NENHUM EVENTO AGENDADO</h3>
+                <p style={{ color: 'var(--text-muted)', marginTop: '8px' }}>Seja o primeiro a agendar um evento da democracia.</p>
               </div>
-            </div>
+            ) : (
+              <div className="bento-grid">
+                {democracyEvents.map(ev => {
+                  const eventDate = new Date(ev.event_date);
+                  const isPast = eventDate < new Date();
+                  const statusColor = getStatusColor(ev.status);
+                  const catIcon = getCategoryIcon(ev.category);
+                  const canEdit = userRole === 'admin' || ev.created_by === (citizenData && citizenData.profile && citizenData.profile.id);
+
+                  return (
+                    <div key={ev.id} className="bento-card col-4" style={{ position: 'relative', opacity: ev.status === 'cancelado' ? 0.65 : 1 }}>
+                      {/* Badge de categoria */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                        <span style={{
+                          fontSize: '11px', fontWeight: '700', letterSpacing: '1px',
+                          background: `${statusColor}22`, color: statusColor,
+                          border: `1px solid ${statusColor}`, borderRadius: '4px',
+                          padding: '3px 10px'
+                        }}>
+                          {ev.status.toUpperCase()}
+                        </span>
+                        <span style={{ fontSize: '22px' }}>{catIcon}</span>
+                      </div>
+
+                      <h3 className="card-title" style={{ fontSize: '16px', marginBottom: '8px', lineHeight: '1.3' }}>{ev.title}</h3>
+
+                      {ev.description && (
+                        <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '12px', lineHeight: '1.5' }}>
+                          {ev.description.length > 100 ? ev.description.substring(0, 100) + '...' : ev.description}
+                        </p>
+                      )}
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                          <span>📅</span>
+                          <span style={{ color: 'var(--gold)' }}>
+                            {eventDate.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}
+                            {' '}às {eventDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        {ev.location && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                            <span>📍</span>
+                            <span style={{ color: 'var(--text-muted)' }}>{ev.location}</span>
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                          <span>👥</span>
+                          <span style={{ color: 'var(--text-muted)' }}>
+                            {ev.participant_count} inscrito{ev.participant_count !== 1 ? 's' : ''}
+                            {ev.max_participants ? ` / ${ev.max_participants} vagas` : ''}
+                          </span>
+                        </div>
+                        {ev.creator_name && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px' }}>
+                            <span>🏛️</span>
+                            <span style={{ color: 'var(--text-muted)' }}>Por @{ev.creator_name}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {ev.status !== 'cancelado' && ev.status !== 'concluído' && !isPast && (
+                          <button
+                            className={`state-btn ${ev.is_registered ? 'warning' : 'success'}`}
+                            style={{ flex: 1, fontSize: '12px', padding: '8px 12px' }}
+                            onClick={() => handleRegisterEvent(ev.id)}
+                          >
+                            {ev.is_registered ? 'CANCELAR INSCRIÇÃO' : 'INSCREVER-SE'}
+                          </button>
+                        )}
+                        {ev.registration_url && (
+                          <a href={ev.registration_url} target="_blank" rel="noreferrer"
+                            className="state-btn outline"
+                            style={{ flex: 1, fontSize: '12px', padding: '8px 12px', textDecoration: 'none', textAlign: 'center' }}>
+                            🔗 LINK
+                          </a>
+                        )}
+                        {canEdit && (
+                          <>
+                            <button className="sim-btn admin" style={{ fontSize: '11px' }} onClick={() => openEditEventForm(ev)}>EDITAR</button>
+                            <button className="sim-btn citizen-low" style={{ fontSize: '11px' }} onClick={() => handleDeleteEvent(ev.id)}>EXCLUIR</button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
         )}
 
@@ -1184,11 +1419,11 @@ function App() {
                   </div>
                   <div className="form-group">
                     <label>DESCRIÇÃO/MOTIVO *</label>
-                    <textarea required placeholder="Detalhes do ocorrido" value={quickDescription} onChange={e => setQuickDescription(e.target.value)} />
+                    <textarea required value={quickDescription} onChange={e => setQuickDescription(e.target.value)} />
                   </div>
                   <div className="form-group">
                     <label>URL DO COMPROVANTE (OPCIONAL)</label>
-                    <input type="text" placeholder="https://..." value={quickEvidence} onChange={e => setQuickEvidence(e.target.value)} />
+                    <input type="text" value={quickEvidence} onChange={e => setQuickEvidence(e.target.value)} />
                   </div>
                   <div className="form-group">
                     <label className="checkbox-container">
@@ -1207,11 +1442,11 @@ function App() {
                 <form onSubmit={handleAdminCreateUser} className="form-dense" style={{ marginTop: '15px' }}>
                   <div className="form-group">
                     <label>NICKNAME *</label>
-                    <input type="text" required placeholder="ex: novo_usuario" value={createUsername} onChange={e => setCreateUsername(e.target.value)} />
+                    <input type="text" required value={createUsername} onChange={e => setCreateUsername(e.target.value)} />
                   </div>
                   <div className="form-group">
                     <label>E-MAIL *</label>
-                    <input type="email" required placeholder="email@patria.gov.br" value={createEmail} onChange={e => setCreateEmail(e.target.value)} />
+                    <input type="email" required value={createEmail} onChange={e => setCreateEmail(e.target.value)} />
                   </div>
                   <div className="form-group">
                     <label>NÍVEL DE ACESSO BASE *</label>
@@ -1226,15 +1461,15 @@ function App() {
                   </div>
                   <div className="form-group">
                     <label>TÍTULO PERSONALIZADO DA HIERARQUIA *</label>
-                    <input type="text" required placeholder="ex: Comissário, Operador, Auditor, Cidadão A" value={createHierarchyTitle} onChange={e => setCreateHierarchyTitle(e.target.value)} />
+                    <input type="text" required value={createHierarchyTitle} onChange={e => setCreateHierarchyTitle(e.target.value)} />
                   </div>
                   <div className="form-group">
                     <label>URL DA FOTO (OPCIONAL)</label>
-                    <input type="text" placeholder="https://..." value={createAvatarUrl} onChange={e => setCreateAvatarUrl(e.target.value)} />
+                    <input type="text" value={createAvatarUrl} onChange={e => setCreateAvatarUrl(e.target.value)} />
                   </div>
                   <div className="form-group">
                     <label>SENHA TEMPORÁRIA *</label>
-                    <input type="password" required placeholder="Senha inicial" value={createPassword} onChange={e => setCreatePassword(e.target.value)} />
+                    <input type="password" required value={createPassword} onChange={e => setCreatePassword(e.target.value)} />
                   </div>
                   <button type="submit" className="state-btn success success-glow">INDEXAR USUÁRIO</button>
                 </form>
@@ -1484,7 +1719,7 @@ function App() {
           </section>
         )}
 
-        {/* LOGS DE AUDITORIA */}
+        {/* LOGS DE AUDITORIA (ADMIN) */}
         {activeTab === 'adm-audit' && userRole === 'admin' && (
           <section className="tab-pane active">
             <div className="section-heading" style={{ marginBottom: '20px' }}>
@@ -1536,12 +1771,12 @@ function App() {
           <form onSubmit={handleUpdateProfile}>
             <div className="form-group">
               <label>TÍTULO PERSONALIZADO DA HIERARQUIA</label>
-              <input type="text" placeholder="ex: Operador de Campo, Auditor Cívico, Cidadão A" value={customTitleInput} onChange={e => setCustomTitleInput(e.target.value)} />
+              <input type="text" value={customTitleInput} onChange={e => setCustomTitleInput(e.target.value)} />
             </div>
 
             <div className="form-group">
               <label>URL DA FOTO DE PERFIL</label>
-              <input type="text" placeholder="https://..." value={inputAvatarUrl} onChange={e => setInputAvatarUrl(e.target.value)} />
+              <input type="text" value={inputAvatarUrl} onChange={e => setInputAvatarUrl(e.target.value)} />
             </div>
 
             <div className="form-group">
@@ -1568,7 +1803,7 @@ function App() {
       <div className={`modal-overlay ${editUserModalOpen ? 'active' : ''}`}>
         <div className="modal-card">
           <h2 className="modal-title">EDITAR PERMISSÕES E TÍTULOS DO USUÁRIO</h2>
-          <p className="modal-desc">Configure o Nível de Acesso Base (Admin / Usuário) e defina o Título Personalizado da Hierarquia sem alterar as permissões rígidas.</p>
+          <p className="modal-desc">Configure o Nível de Acesso Base (Admin / Usuário) e defina o Título Personalizado da Hierarquia.</p>
           <form onSubmit={handleAdminSaveUserEdit}>
             <div className="form-group">
               <label>NICKNAME</label>
@@ -1591,13 +1826,13 @@ function App() {
 
             <div className="form-group">
               <label>TÍTULO PERSONALIZADO DA HIERARQUIA *</label>
-              <input type="text" required placeholder="ex: Comissário Chefe, Operador de Campo, Auditor, Cidadão A" value={editFormTitle} onChange={e => setEditFormTitle(e.target.value)} />
+              <input type="text" required value={editFormTitle} onChange={e => setEditFormTitle(e.target.value)} />
               <span className="field-desc">Título exibido na carteira e nos distintivos do usuário.</span>
             </div>
 
             <div className="form-group">
               <label>URL DA FOTO DE PERFIL</label>
-              <input type="text" placeholder="https://..." value={editFormAvatar} onChange={e => setEditFormAvatar(e.target.value)} />
+              <input type="text" value={editFormAvatar} onChange={e => setEditFormAvatar(e.target.value)} />
             </div>
 
             <div className="form-group">

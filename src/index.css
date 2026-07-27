@@ -42,54 +42,8 @@ body {
 }
 
 /* ==========================================
-   SIMULADOR DE AMBIENTE (TEST BAR)
+   BOTÕES DE AÇÃO COMPACTOS (USO INTERNO)
    ========================================== */
-.sim-toolbar {
-  background: #000;
-  border-bottom: 1px solid var(--border);
-  padding: 8px 16px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  position: relative;
-  z-index: 1000;
-}
-
-.sim-brand {
-  display: flex;
-  align-items: center;
-}
-
-.sim-tag {
-  background: var(--warning);
-  color: #fff;
-  font-family: var(--font-ui);
-  font-weight: 700;
-  padding: 2px 8px;
-  font-size: 11px;
-  letter-spacing: 1px;
-  border-radius: 3px;
-  animation: pulse-red 2s infinite;
-}
-
-@keyframes pulse-red {
-  0% { opacity: 0.7; }
-  50% { opacity: 1; }
-  100% { opacity: 0.7; }
-}
-
-.sim-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.sim-label {
-  font-family: var(--font-ui);
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
 .sim-btn {
   background: #222;
   border: 1px solid #444;
@@ -115,6 +69,7 @@ body {
 .sim-btn.citizen-high { border-color: var(--success); }
 .sim-btn.citizen-mid { border-color: var(--text-muted); }
 .sim-btn.citizen-low { border-color: var(--warning); }
+
 
 /* ==========================================
    TELA DE AUTENTICAÇÃO (LOGIN)
@@ -1530,3 +1485,71 @@ textarea:focus {
   cursor: pointer;
 }
 
+/* ==========================================
+   EVENTOS DA DEMOCRACIA
+   ========================================== */
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.democracy-event-card {
+  position: relative;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.democracy-event-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.6);
+}
+
+.event-status-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.event-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.event-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.event-meta-row .icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.event-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-light);
+}
+
+/* Correção: tela de autenticação agora ocupa altura total sem offset da toolbar */
+#auth-screen {
+  min-height: 100vh;
+}
+
+/* Estilo de rec-delta para cor dinâmica */
+.rec-delta.text-success { color: var(--success); }
+.rec-delta.text-warning { color: var(--warning); }
