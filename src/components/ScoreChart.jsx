@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 
-const ScoreChart = ({ history }) => {
+const ScoreChart = ({ history = [], currentScore = 5000 }) => {
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -11,7 +11,7 @@ const ScoreChart = ({ history }) => {
     return () => {
       window.removeEventListener('resize', handleResize);
     };
-  }, [history]);
+  }, [history, currentScore]);
 
   const drawChart = () => {
     const canvas = canvasRef.current;
@@ -27,26 +27,32 @@ const ScoreChart = ({ history }) => {
 
     ctx.clearRect(0, 0, width, height);
 
-    // Calcular scores históricos cumulativos
-    let points = [5000];
-    if (history && history.length > 0) {
-      // Ordenar cronologicamente
-      const sorted = [...history].reverse();
-      let running = 5000;
-      points = [running];
+    // Filtrar eventos aprovados e ordenar cronologicamente (do mais antigo para o mais recente)
+    const approvedEvents = (history || [])
+      .filter(ev => ev.status === 'approved' || !ev.status)
+      .sort((a, b) => new Date(a.occurred_at || a.created_at || 0) - new Date(b.occurred_at || b.created_at || 0));
 
-      sorted.forEach(ev => {
-        if (ev.status === 'approved') {
-          running = Math.max(0, Math.min(10000, running + ev.points_delta));
-          points.push(running);
-        }
-      });
+    let points = [];
+    const targetEndScore = typeof currentScore === 'number' ? currentScore : 5000;
+
+    if (approvedEvents.length > 0) {
+      // Reconstruir o histórico de trás para frente ancorado no score atual do usuário
+      const pointList = [targetEndScore];
+      let running = targetEndScore;
+
+      for (let i = approvedEvents.length - 1; i >= 0; i--) {
+        const delta = approvedEvents[i].points_delta || 0;
+        running = Math.max(0, Math.min(10000, running - delta));
+        pointList.unshift(running);
+      }
+
+      points = pointList;
     } else {
-      points = [5000, 5000];
+      points = [5000, targetEndScore];
     }
 
     if (points.length === 1) {
-      points.push(points[0]);
+      points.unshift(5000);
     }
 
     const padding = { top: 20, right: 30, bottom: 25, left: 45 };

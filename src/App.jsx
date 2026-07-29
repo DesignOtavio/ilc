@@ -95,6 +95,18 @@ function App() {
   const [democracyFormOpen, setDemocracyFormOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
 
+  // Modais de Eventos da Democracia (Inscritos & WAHA Webhook)
+  const [participantsModalOpen, setParticipantsModalOpen] = useState(false);
+  const [selectedEventParticipants, setSelectedEventParticipants] = useState([]);
+  const [selectedEventTitle, setSelectedEventTitle] = useState('');
+  
+  const [wahaModalOpen, setWahaModalOpen] = useState(false);
+  const [wahaEvent, setWahaEvent] = useState(null);
+  const [wahaWebhookUrl, setWahaWebhookUrl] = useState(localStorage.getItem('ilc_waha_webhook') || '');
+  const [wahaPhone, setWahaPhone] = useState('');
+  const [wahaCustomMessage, setWahaCustomMessage] = useState('');
+  const [wahaSending, setWahaSending] = useState(false);
+
   // Login Form
   const [authTab, setAuthTab] = useState('login');
   const [loginId, setLoginId] = useState('');
@@ -125,6 +137,133 @@ function App() {
     } catch (err) {
       return { error: res.ok ? 'Resposta inválida do servidor.' : `Resposta inválida (${res.status}).` };
     }
+  };
+
+  // FORMATADORES COMPREENSÍVEIS DE AUDITORIA
+  const formatAuditDate = (dateStr) => {
+    if (!dateStr) return '—';
+    const dt = new Date(dateStr);
+    if (isNaN(dt.getTime())) return dateStr;
+    return dt.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).replace(',', ' às');
+  };
+
+  const formatAuditEntity = (entity) => {
+    if (!entity) return '⚙️ Geral';
+    const map = {
+      'users': '👤 Perfil do Cidadão',
+      'user': '👤 Perfil do Cidadão',
+      'score_accounts': '📊 Pontuação ILC',
+      'score_events': '📝 Registro Cívico',
+      'democracy_events': '🗳️ Evento da Democracia',
+      'democracy_event_participants': '🤝 Inscrição em Evento',
+      'user_certificates': '📜 Certificado de Mérito',
+      'merit_certificates': '📜 Certificado de Mérito',
+      'system': '⚙️ Sistema Estatal'
+    };
+    return map[entity.toLowerCase()] || `📁 ${entity.replace(/_/g, ' ').toUpperCase()}`;
+  };
+
+  const formatAuditAction = (act) => {
+    if (!act) return { label: 'Ação Registrada', color: 'rgba(78, 110, 142, 0.2)', border: '#4E6E8E', text: '#B9B19A' };
+    const norm = act.toUpperCase();
+    const map = {
+      'CREATE_USER': { label: '🆕 Nova Conta Criada', color: 'rgba(115, 179, 58, 0.2)', border: '#73B33A', text: '#73B33A' },
+      'UPDATE_USER': { label: '✏️ Conta Atualizada', color: 'rgba(78, 110, 142, 0.2)', border: '#4E6E8E', text: '#8EB4E3' },
+      'UPDATE_STATUS': { label: '🔒 Status Alterado', color: 'rgba(138, 61, 47, 0.2)', border: '#8A3D2F', text: '#E26D5C' },
+      'UPDATE_AVATAR': { label: '🖼️ Foto Atualizada', color: 'rgba(176, 138, 71, 0.2)', border: '#B08A47', text: '#D4C08A' },
+      'UPDATE_NICKNAME': { label: '🏷️ Apelido Alterado', color: 'rgba(176, 138, 71, 0.2)', border: '#B08A47', text: '#D4C08A' },
+      'UPDATE_SCORE': { label: '⚖️ Pontuação Reajustada', color: 'rgba(176, 138, 71, 0.2)', border: '#B08A47', text: '#D4C08A' },
+      'QUICK_EVENT': { label: '⚡ Atividade Lançada', color: 'rgba(115, 179, 58, 0.2)', border: '#73B33A', text: '#73B33A' },
+      'EVENT_APPROVED': { label: '✅ Evento Aprovado', color: 'rgba(115, 179, 58, 0.2)', border: '#73B33A', text: '#73B33A' },
+      'EVENT_REJECTED': { label: '❌ Evento Rejeitado', color: 'rgba(138, 61, 47, 0.2)', border: '#8A3D2F', text: '#E26D5C' },
+      'GRANT_CERTIFICATE': { label: '🎖️ Outorga de Certificado', color: 'rgba(176, 138, 71, 0.25)', border: '#B08A47', text: '#FFD700' },
+      'CREATE_DEMOCRACY_EVENT': { label: '📅 Evento Agendado', color: 'rgba(115, 179, 58, 0.2)', border: '#73B33A', text: '#73B33A' },
+      'UPDATE_DEMOCRACY_EVENT': { label: '📝 Evento Editado', color: 'rgba(78, 110, 142, 0.2)', border: '#4E6E8E', text: '#8EB4E3' },
+      'DELETE_DEMOCRACY_EVENT': { label: '🗑️ Evento Excluído', color: 'rgba(138, 61, 47, 0.2)', border: '#8A3D2F', text: '#E26D5C' },
+      'REGISTER_DEMOCRACY_EVENT': { label: '🙋 Inscrição Confirmada', color: 'rgba(115, 179, 58, 0.2)', border: '#73B33A', text: '#73B33A' },
+      'CANCEL_DEMOCRACY_EVENT': { label: '🚫 Inscrição Cancelada', color: 'rgba(138, 61, 47, 0.2)', border: '#8A3D2F', text: '#E26D5C' },
+    };
+    return map[norm] || { label: act.replace(/_/g, ' ').toUpperCase(), color: 'rgba(78, 110, 142, 0.2)', border: '#4E6E8E', text: '#B9B19A' };
+  };
+
+  const renderAuditData = (data) => {
+    if (!data || (typeof data === 'object' && Object.keys(data).length === 0)) {
+      return <span className="audit-data-empty">Sem dados adicionais</span>;
+    }
+
+    if (typeof data !== 'object') {
+      return <span className="audit-chip">{String(data)}</span>;
+    }
+
+    const keyTranslations = {
+      username: 'Nickname',
+      email: 'E-mail',
+      celular: 'Celular',
+      hierarchy_title: 'Título',
+      current_score: 'Score',
+      started_score: 'Score Inicial',
+      points_delta: 'Variação',
+      delta: 'Pontos',
+      status: 'Status',
+      role: 'Permissão',
+      role_name: 'Permissão Base',
+      title: 'Título do Evento',
+      description: 'Descrição',
+      reason: 'Motivo',
+      event_type: 'Tipo de Evento',
+      event_type_id: 'Tipo',
+      certificate_name: 'Certificado',
+      location: 'Local',
+      event_date: 'Data do Evento',
+      category: 'Categoria',
+      action: 'Ação',
+      user_id: 'ID Usuário'
+    };
+
+    const valueTranslations = {
+      active: 'Ativo',
+      blocked: 'Bloqueado',
+      inactive: 'Inativo',
+      admin: 'Administrador',
+      usuario: 'Usuário Padrão',
+      pending: 'Pendente',
+      approved: 'Aprovado',
+      rejected: 'Rejeitado'
+    };
+
+    return (
+      <div className="audit-data-container">
+        {Object.entries(data).map(([key, val]) => {
+          if (val === null || val === undefined || val === '') return null;
+          const label = keyTranslations[key] || key.replace(/_/g, ' ');
+          let displayVal = val;
+
+          if (typeof val === 'boolean') {
+            displayVal = val ? 'Sim' : 'Não';
+          } else if (typeof val === 'string' && valueTranslations[val]) {
+            displayVal = valueTranslations[val];
+          } else if (typeof val === 'object') {
+            displayVal = JSON.stringify(val);
+          } else if (key === 'points_delta' || key === 'delta') {
+            displayVal = Number(val) > 0 ? `+${val} pts` : `${val} pts`;
+          } else if (key === 'current_score') {
+            displayVal = `${val} pts`;
+          }
+
+          return (
+            <span key={key} className="audit-chip">
+              <span className="audit-chip-key">{label}:</span> {displayVal}
+            </span>
+          );
+        })}
+      </div>
+    );
   };
 
   // Inicializar Aba padrão conforme Nível de Acesso Base
@@ -257,6 +396,77 @@ function App() {
       setDemocracyEvents(data);
     } catch (err) {
       showToast('Erro nos Eventos', err.message, 'warning');
+    }
+  };
+
+  const openParticipantsModal = async (ev) => {
+    setSelectedEventTitle(ev.title);
+    setSelectedEventParticipants([]);
+    setParticipantsModalOpen(true);
+    try {
+      const res = await fetch(`${API_BASE}/democracy-events/${ev.id}/participants`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await parseApiResponse(res);
+      if (!res.ok) throw new Error(data.error);
+      setSelectedEventParticipants(data);
+    } catch (err) {
+      showToast('Erro ao listar inscritos', err.message, 'warning');
+    }
+  };
+
+  const openWahaModal = (ev) => {
+    setWahaEvent(ev);
+    const eventDate = new Date(ev.event_date);
+    const formattedDate = eventDate.toLocaleDateString('pt-BR', {
+      weekday: 'short', day: '2-digit', month: 'short', year: 'numeric'
+    }) + ' às ' + eventDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+    const defaultMsg = `*🏛️ EVENTO DA DEMOCRACIA: ${ev.title.toUpperCase()}*\n\n` +
+      `📅 *Data/Hora:* ${formattedDate}\n` +
+      (ev.location ? `📍 *Local:* ${ev.location}\n` : '') +
+      `🏷️ *Categoria:* ${ev.category.toUpperCase()}\n` +
+      (ev.description ? `📝 *Descrição:* ${ev.description}\n` : '') +
+      (ev.registration_url ? `🔗 *Link:* ${ev.registration_url}\n` : '') +
+      `\n_Mensagem Oficial — Índice de Lealdade Cívica (ILC)_`;
+
+    setWahaCustomMessage(defaultMsg);
+    setWahaModalOpen(true);
+  };
+
+  const handleSendWahaWebhook = async (e) => {
+    e.preventDefault();
+    if (!wahaWebhookUrl) {
+      showToast('Validação', 'Informe a URL do Webhook do WAHA.', 'warning');
+      return;
+    }
+
+    setWahaSending(true);
+    try {
+      localStorage.setItem('ilc_waha_webhook', wahaWebhookUrl);
+
+      const res = await fetch(`${API_BASE}/democracy-events/${wahaEvent.id}/send-webhook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          webhook_url: wahaWebhookUrl,
+          phone: wahaPhone,
+          custom_message: wahaCustomMessage
+        })
+      });
+
+      const data = await parseApiResponse(res);
+      if (!res.ok) throw new Error(data.error);
+
+      showToast('Notificação WhatsApp', data.message, 'success');
+      setWahaModalOpen(false);
+    } catch (err) {
+      showToast('Erro no Webhook WAHA', err.message, 'warning');
+    } finally {
+      setWahaSending(false);
     }
   };
 
@@ -1118,7 +1328,7 @@ function App() {
                   <p className="card-subtitle">Evolução temporal nas últimas atividades homologadas.</p>
                 </div>
                 <div className="chart-container">
-                  <ScoreChart history={citizenData.history} />
+                  <ScoreChart history={citizenData.history} currentScore={citizenData.profile ? citizenData.profile.current_score : 5000} />
                 </div>
               </div>
 
@@ -1127,40 +1337,48 @@ function App() {
         )}
 
         {/* ========================================== */}
+        {/* ========================================== */}
         {/* LOGS DE AUDITORIA DO USUÁRIO COMUM         */}
         {/* ========================================== */}
         {activeTab === 'cit-audit' && (
           <section className="tab-pane active">
             <div className="section-heading" style={{ marginBottom: '20px' }}>
               <h2 className="section-title">MEUS LOGS DE AUDITORIA</h2>
-              <p className="section-subtitle">Registro imutável de todas as ações associadas à sua conta.</p>
+              <p className="section-subtitle">Registro transparente e imutável de todas as ações associadas à sua conta.</p>
             </div>
             <div className="table-container">
-              <table className="state-table font-mono">
+              <table className="state-table">
                 <thead>
                   <tr>
                     <th>DATA E HORA</th>
-                    <th>ENTIDADE</th>
-                    <th>AÇÃO</th>
-                    <th>DADOS REGISTRADOS</th>
+                    <th>ENTIDADE AFETADA</th>
+                    <th>AÇÃO REALIZADA</th>
+                    <th>DETALHES / DADOS REGISTRADOS</th>
                   </tr>
                 </thead>
                 <tbody>
                   {citizenAuditLogs.length === 0 ? (
                     <tr>
-                      <td colSpan="4" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Nenhum log de auditoria encontrado para sua conta.</td>
+                      <td colSpan="4" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px' }}>
+                        Nenhum registro de auditoria encontrado para sua conta.
+                      </td>
                     </tr>
                   ) : (
-                    citizenAuditLogs.map(log => (
-                      <tr key={log.id}>
-                        <td style={{ fontSize: '11px' }}>{new Date(log.created_at).toLocaleString('pt-BR')}</td>
-                        <td style={{ color: 'var(--slate)' }}>{log.entity_name}</td>
-                        <td style={{ fontWeight: '700', color: 'var(--gold)' }}>{log.action}</td>
-                        <td style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '11px' }}>
-                          {log.new_data ? JSON.stringify(log.new_data) : '—'}
-                        </td>
-                      </tr>
-                    ))
+                    citizenAuditLogs.map(log => {
+                      const actObj = formatAuditAction(log.action);
+                      return (
+                        <tr key={log.id}>
+                          <td className="audit-date">📅 {formatAuditDate(log.created_at)}</td>
+                          <td><span className="audit-entity-badge">{formatAuditEntity(log.entity_name)}</span></td>
+                          <td>
+                            <span className="audit-action-badge" style={{ background: actObj.color, border: `1px solid ${actObj.border}`, color: actObj.text }}>
+                              {actObj.label}
+                            </span>
+                          </td>
+                          <td>{renderAuditData(log.new_data)}</td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -1335,6 +1553,12 @@ function App() {
                             🔗 LINK
                           </a>
                         )}
+                        <button className="sim-btn operator" style={{ fontSize: '11px' }} onClick={() => openParticipantsModal(ev)}>
+                          👥 INSCRITOS ({ev.participant_count})
+                        </button>
+                        <button className="sim-btn citizen-high" style={{ fontSize: '11px' }} onClick={() => openWahaModal(ev)}>
+                          📲 WAHA (WHATSAPP)
+                        </button>
                         {canEdit && (
                           <>
                             <button className="sim-btn admin" style={{ fontSize: '11px' }} onClick={() => openEditEventForm(ev)}>EDITAR</button>
@@ -1646,7 +1870,7 @@ function App() {
               <div className="bento-card col-8">
                 <h3 className="card-title">EVOLUÇÃO HISTÓRICA</h3>
                 <div className="chart-container" style={{ height: '180px', marginBottom: '20px' }}>
-                  <ScoreChart history={detailCitizenData.history} />
+                  <ScoreChart history={detailCitizenData.history} currentScore={detailCitizenData.citizen ? detailCitizenData.citizen.current_score : 5000} />
                 </div>
 
                 <div className="action-divider">OUTORGAR CERTIFICADO MANUALMENTE</div>
@@ -1724,36 +1948,47 @@ function App() {
           <section className="tab-pane active">
             <div className="section-heading" style={{ marginBottom: '20px' }}>
               <h2 className="section-title">AUDITORIA DOS REGISTROS ESTATAIS</h2>
-              <p className="section-subtitle">Logs imutáveis de ações administrativas e alterações de usuários.</p>
+              <p className="section-subtitle">Logs imutáveis e legíveis de todas as ações administrativas e alterações de usuários.</p>
             </div>
             <div className="table-container">
-              <table className="state-table font-mono">
+              <table className="state-table">
                 <thead>
                   <tr>
                     <th>DATA E HORA</th>
-                    <th>AUTOR</th>
-                    <th>ENTIDADE</th>
-                    <th>AÇÃO</th>
-                    <th>DADOS NOVOS</th>
+                    <th>AUTOR / OPERADOR</th>
+                    <th>ENTIDADE AFETADA</th>
+                    <th>AÇÃO EXECUTADA</th>
+                    <th>DETALHES DA ALTERAÇÃO</th>
                   </tr>
                 </thead>
                 <tbody>
                   {auditLogs.length === 0 ? (
                     <tr>
-                      <td colSpan="5" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Sem logs de auditoria.</td>
+                      <td colSpan="5" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px' }}>
+                        Nenhum registro de auditoria encontrado no sistema.
+                      </td>
                     </tr>
                   ) : (
-                    auditLogs.map(log => (
-                      <tr key={log.id}>
-                        <td style={{ fontSize: '11px' }}>{new Date(log.created_at).toLocaleString('pt-BR')}</td>
-                        <td className="text-gold">{log.actor_name || 'Sistema'}</td>
-                        <td style={{ color: 'var(--slate)' }}>{log.entity_name}</td>
-                        <td style={{ fontWeight: '700' }}>{log.action}</td>
-                        <td style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {log.new_data ? JSON.stringify(log.new_data) : 'Nulo'}
-                        </td>
-                      </tr>
-                    ))
+                    auditLogs.map(log => {
+                      const actObj = formatAuditAction(log.action);
+                      return (
+                        <tr key={log.id}>
+                          <td className="audit-date">📅 {formatAuditDate(log.created_at)}</td>
+                          <td>
+                            <span className="audit-author">
+                              👤 {log.actor_name ? `@${log.actor_name}` : 'Sistema Automático'}
+                            </span>
+                          </td>
+                          <td><span className="audit-entity-badge">{formatAuditEntity(log.entity_name)}</span></td>
+                          <td>
+                            <span className="audit-action-badge" style={{ background: actObj.color, border: `1px solid ${actObj.border}`, color: actObj.text }}>
+                              {actObj.label}
+                            </span>
+                          </td>
+                          <td>{renderAuditData(log.new_data)}</td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -1847,6 +2082,95 @@ function App() {
             <div className="form-buttons">
               <button type="button" className="state-btn secondary" onClick={() => setEditUserModalOpen(false)}>CANCELAR</button>
               <button type="submit" className="state-btn primary gold-glow">SALVAR ALTERAÇÕES</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {/* MODAL VER INSCRITOS NO EVENTO DA DEMOCRACIA */}
+      <div className={`modal-overlay ${participantsModalOpen ? 'active' : ''}`}>
+        <div className="modal-card">
+          <h2 className="modal-title">👥 INSCRITOS NO EVENTO</h2>
+          <p className="modal-desc">Cidadãos com inscrição confirmada em <strong>{selectedEventTitle}</strong>.</p>
+          
+          <div style={{ maxHeight: '350px', overflowY: 'auto', marginBottom: '20px' }}>
+            {selectedEventParticipants.length === 0 ? (
+              <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px 0' }}>Nenhum cidadão inscrito até o momento.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {selectedEventParticipants.map(p => (
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: 'var(--bg-2)', borderRadius: '6px', border: '1px solid var(--border-light)' }}>
+                    {p.avatar_url ? (
+                      <img src={p.avatar_url} alt="Avatar" style={{ width: '38px', height: '38px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--gold)' }} />
+                    ) : (
+                      <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--gold-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '14px' }}>
+                        {p.username.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: '700', color: 'var(--text)', fontSize: '14px' }}>@{p.username}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--gold-light)' }}>{p.hierarchy_title || 'Usuário Cívico'}</div>
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      {new Date(p.registered_at).toLocaleDateString('pt-BR')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="form-buttons">
+            <button type="button" className="state-btn secondary" onClick={() => setParticipantsModalOpen(false)}>FECHAR</button>
+          </div>
+        </div>
+      </div>
+
+      {/* MODAL INTEGRAÇÃO WHATSAPP (WAHA WEBHOOK) */}
+      <div className={`modal-overlay ${wahaModalOpen ? 'active' : ''}`}>
+        <div className="modal-card">
+          <h2 className="modal-title">📲 NOTIFICAR WHATSAPP (WAHA)</h2>
+          <p className="modal-desc">Dispare um Webhook HTTP para o seu servidor WAHA (WhatsApp HTTP API) ou n8n/Make com os dados deste evento.</p>
+          
+          <form onSubmit={handleSendWahaWebhook}>
+            <div className="form-group">
+              <label>URL DO WEBHOOK WAHA / HTTP ENDPOINT *</label>
+              <input 
+                type="url" 
+                required 
+                placeholder="Ex: https://waha.meudominio.com/api/sendText ou webhook URL"
+                value={wahaWebhookUrl} 
+                onChange={e => setWahaWebhookUrl(e.target.value)} 
+              />
+              <span className="field-desc">A requisição enviará o payload no padrão da API WAHA (chatId + text).</span>
+            </div>
+
+            <div className="form-group">
+              <label>TELEFONE DO DESTINATÁRIO (OPCIONAL)</label>
+              <input 
+                type="text" 
+                placeholder="Ex: 5511999999999 (número com DDD)" 
+                value={wahaPhone} 
+                onChange={e => setWahaPhone(e.target.value)} 
+              />
+              <span className="field-desc">Se preenchido, envia para o número específico (`chatId: 55...@c.us`).</span>
+            </div>
+
+            <div className="form-group">
+              <label>MENSAGEM DE NOTIFICAÇÃO</label>
+              <textarea 
+                rows="5"
+                value={wahaCustomMessage} 
+                onChange={e => setWahaCustomMessage(e.target.value)} 
+              />
+              <span className="field-desc">Texto pré-formatado do evento. Pode ser customizado antes de enviar.</span>
+            </div>
+
+            <div className="form-buttons">
+              <button type="button" className="state-btn secondary" onClick={() => setWahaModalOpen(false)}>CANCELAR</button>
+              <button type="submit" className="state-btn primary gold-glow" disabled={wahaSending}>
+                {wahaSending ? 'ENVIANDO...' : '📲 ENVIAR VIA WAHA'}
+              </button>
             </div>
           </form>
         </div>

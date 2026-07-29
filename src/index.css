@@ -2,22 +2,25 @@
    VARIÁVEIS DE DESIGN ESTATAIS (TOKENS)
    ========================================== */
 :root {
-  --bg: #0B0E0B;
-  --bg-2: #161A16;
-  --panel: #111411;
-  --border: #5C4B2A;
-  --border-light: rgba(176, 138, 71, 0.2);
-  --gold: #B08A47;
-  --gold-light: #D4C08A;
-  --text: #E6DEC8;
-  --text-muted: #B9B19A;
-  --success: #73B33A;
-  --olive: #556B2F;
-  --warning: #8A3D2F;
-  --slate: #4E6E8E;
-  --violet: #6B537C;
+  --bg: #050B14;
+  --bg-2: #0B1629;
+  --panel: #0E1B33;
+  --border: #1E3459;
+  --border-light: rgba(212, 175, 55, 0.25);
+  --gold: #D4AF37;
+  --gold-light: #F3E5AB;
+  --gold-dark: #997A15;
+  --blue-accent: #1D4ED8;
+  --navy-dark: #08101D;
+  --text: #F1F5F9;
+  --text-muted: #94A3B8;
+  --success: #34D399;
+  --olive: #1D4ED8;
+  --warning: #EF4444;
+  --slate: #60A5FA;
+  --violet: #A78BFA;
   --radius: 12px;
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
   
   --font-title: 'Bebas Neue', sans-serif;
   --font-ui: 'Barlow Condensed', sans-serif;
@@ -75,11 +78,14 @@ body {
    TELA DE AUTENTICAÇÃO (LOGIN)
    ========================================== */
 #auth-screen {
-  min-height: calc(100vh - 38px);
+  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   justify-content: center;
   align-items: center;
   padding: 40px 20px;
+  padding-top: max(40px, env(safe-area-inset-top));
+  padding-bottom: max(40px, env(safe-area-inset-bottom));
   background: radial-gradient(circle at center, #161A16 0%, #0B0E0B 100%);
 }
 
@@ -374,7 +380,8 @@ textarea:focus {
 .app-container {
   display: none; /* Ativado via JS */
   flex-direction: column;
-  min-height: calc(100vh - 38px);
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .app-container.active {
@@ -386,6 +393,7 @@ textarea:focus {
   background: var(--panel);
   border-bottom: 2px solid var(--border);
   padding: 16px 24px;
+  padding-top: max(16px, env(safe-area-inset-top));
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -462,6 +470,13 @@ textarea:focus {
   background: #080a08;
   border-bottom: 1px solid var(--border-light);
   padding: 0 24px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.main-nav::-webkit-scrollbar {
+  display: none;
 }
 
 .nav-group {
@@ -485,6 +500,9 @@ textarea:focus {
   padding: 16px 20px;
   cursor: pointer;
   transition: all 0.25s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .nav-tab:hover {
@@ -1183,11 +1201,14 @@ textarea:focus {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0,0,0,0.8);
+  background: rgba(0,0,0,0.85);
+  backdrop-filter: blur(4px);
   z-index: 2000;
   justify-content: center;
   align-items: center;
-  padding: 20px;
+  padding: 20px 16px;
+  padding-top: max(20px, env(safe-area-inset-top));
+  padding-bottom: max(20px, env(safe-area-inset-bottom));
 }
 
 .modal-overlay.active {
@@ -1202,6 +1223,10 @@ textarea:focus {
   width: 100%;
   padding: 30px;
   box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+  max-height: 88vh;
+  max-height: 88dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .modal-title {
@@ -1293,7 +1318,16 @@ textarea:focus {
   to { transform: translateX(0); opacity: 1; }
 }
 
-/* Responsividade Geral */
+/* Touch Highlight Reset para Dispositivos Móveis */
+button, input, select, textarea, a, .nav-tab, .sim-btn, .auth-tab {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.state-btn:active, .sim-btn:active, .nav-tab:active, .auth-tab:active {
+  transform: scale(0.98);
+}
+
+/* Responsividade Geral & Ajustes Mobile (iOS / Android) */
 @media (max-width: 992px) {
   .bento-grid {
     grid-template-columns: 1fr;
@@ -1313,6 +1347,8 @@ textarea:focus {
     flex-direction: column;
     gap: 16px;
     align-items: flex-start;
+    padding: 16px;
+    padding-top: max(16px, env(safe-area-inset-top));
   }
   .header-user-info {
     width: 100%;
@@ -1320,9 +1356,103 @@ textarea:focus {
   }
   .main-nav {
     overflow-x: auto;
+    padding: 0 12px;
   }
   .nav-group {
     flex-wrap: nowrap;
+  }
+}
+
+/* Prevenção de Auto-Zoom no iOS Safari & Alvos de Toque no Celular */
+@media (max-width: 768px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="datetime-local"],
+  input[type="url"],
+  input[type="number"],
+  select,
+  textarea {
+    font-size: 16px !important; /* Previne auto-zoom no iOS Safari */
+    padding: 12px 14px;
+  }
+
+  .main-content {
+    padding: 16px 12px;
+  }
+
+  .bento-card {
+    padding: 16px;
+  }
+
+  .auth-card {
+    padding: 24px 18px;
+  }
+
+  .modal-card {
+    padding: 20px 16px;
+  }
+
+  .sim-btn {
+    padding: 8px 12px;
+    font-size: 12px;
+    min-height: 36px;
+  }
+
+  .manual-cert-row {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .manual-cert-row button {
+    width: 100%;
+  }
+
+  .status-actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .status-actions button {
+    width: 100%;
+  }
+}
+
+/* Ajuste Fino para Telas Estreitas (iPhone SE / Celulares 360px-400px) */
+@media (max-width: 576px) {
+  .toast-container {
+    left: 12px;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    min-width: auto;
+    max-width: 100%;
+  }
+
+  .toast {
+    min-width: auto;
+    width: 100%;
+  }
+
+  .state-title {
+    font-size: 2.1rem;
+  }
+
+  .state-subtitle {
+    font-size: 0.95rem;
+    letter-spacing: 3px;
+  }
+
+  .credential-card {
+    padding: 14px;
+  }
+
+  .card-photo-box {
+    width: 75px;
+    height: 95px;
+  }
+
+  .score-number {
+    font-size: 2.2rem;
   }
 }
 
@@ -1553,3 +1683,206 @@ textarea:focus {
 /* Estilo de rec-delta para cor dinâmica */
 .rec-delta.text-success { color: var(--success); }
 .rec-delta.text-warning { color: var(--warning); }
+
+/* ==========================================
+   ESTILOS PARA LOGS DE AUDITORIA AMIGÁVEIS
+   ========================================== */
+.audit-action-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.audit-entity-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gold-light);
+  background: rgba(176, 138, 71, 0.1);
+  border: 1px solid rgba(176, 138, 71, 0.25);
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.audit-data-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.audit-chip {
+  background: var(--bg-2);
+  border: 1px solid var(--border-light);
+  color: var(--text);
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.audit-chip-key {
+  color: var(--gold-light);
+  font-weight: 600;
+}
+
+.audit-data-empty {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.audit-date {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.audit-author {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gold-light);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ==========================================
+   PATENTES, EMBLEMAS & CONDECORAÇÕES
+   ========================================== */
+.rank-emblem-box {
+  width: 90px;
+  height: 110px;
+  border-radius: 8px;
+  border: 2px solid var(--gold);
+  background: radial-gradient(circle at center, #0B1629 0%, #050B14 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.9), 0 0 12px rgba(212, 175, 55, 0.3);
+  text-align: center;
+}
+
+.rank-emblem-img {
+  width: 54px;
+  height: 54px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 6px rgba(212, 175, 55, 0.5));
+}
+
+.rank-title-badge {
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.25), rgba(15, 29, 56, 0.8));
+  border: 1px solid var(--gold);
+  color: var(--gold-light);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.decorations-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.decoration-card {
+  background: linear-gradient(135deg, #0B1629 0%, #050B14 100%);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.decoration-card.unlocked {
+  border-color: var(--gold);
+  box-shadow: 0 0 15px rgba(212, 175, 55, 0.2);
+}
+
+.decoration-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--gold-light);
+}
+
+.decoration-icon-box {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: radial-gradient(circle at center, rgba(212, 175, 55, 0.2) 0%, rgba(5, 11, 20, 0.9) 100%);
+  border: 2px solid var(--gold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  margin-bottom: 10px;
+  box-shadow: 0 0 12px rgba(212, 175, 55, 0.3);
+}
+
+.decoration-title {
+  font-family: var(--font-title);
+  font-size: 1.2rem;
+  color: var(--gold-light);
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+
+.decoration-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.decoration-status-pill {
+  margin-top: 10px;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.decoration-status-pill.granted {
+  background: rgba(52, 211, 153, 0.2);
+  color: var(--success);
+  border: 1px solid var(--success);
+}
+
+.decoration-status-pill.locked {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+

@@ -186,6 +186,8 @@ async function ensureSchemaMigrations() {
   await pool.query('ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS hierarchy_title VARCHAR(150) DEFAULT \'Usuário\'');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT');
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS rank_title VARCHAR(100) DEFAULT \'Recruta\'');
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS rank_emblem_url TEXT');
   
   try {
     await pool.query('ALTER TABLE roles ALTER COLUMN name TYPE VARCHAR(50)');
@@ -698,7 +700,7 @@ app.get('/api/citizen/me', authenticateToken, requireRole(['usuario', 'admin']),
     const citizenId = req.user.id;
 
     const citizenRes = await pool.query(
-      `SELECT u.id, u.username, u.email, u.celular, u.status, u.hierarchy_title, u.avatar_url, r.name as role
+      `SELECT u.id, u.username, u.email, u.celular, u.status, u.hierarchy_title, u.avatar_url, u.rank_title, u.rank_emblem_url, r.name as role
        FROM users u
        JOIN user_roles ur ON u.id = ur.user_id
        JOIN roles r ON ur.role_id = r.id
@@ -900,7 +902,7 @@ app.get('/api/admin/citizens', authenticateToken, requireRole(['admin']), async 
 
   try {
     let query = `
-      SELECT u.id, u.username, u.email, u.celular, u.status, u.hierarchy_title, u.avatar_url, r.name as role_name,
+      SELECT u.id, u.username, u.email, u.celular, u.status, u.hierarchy_title, u.avatar_url, u.rank_title, u.rank_emblem_url, r.name as role_name,
              COALESCE(sa.current_score, 5000) as current_score, sa.updated_at,
              (SELECT COUNT(*) FROM score_events WHERE user_id = u.id AND points_delta > 0 AND status = 'approved') as rewards_count,
              (SELECT COUNT(*) FROM score_events WHERE user_id = u.id AND points_delta < 0 AND status = 'approved') as penalties_count
@@ -964,7 +966,7 @@ app.get('/api/admin/citizens/:id', authenticateToken, requireRole(['admin']), as
 
   try {
     const userRes = await pool.query(
-      `SELECT u.id, u.username, u.email, u.celular, u.status, u.hierarchy_title, u.avatar_url, u.created_at, r.name as role_name,
+      `SELECT u.id, u.username, u.email, u.celular, u.status, u.hierarchy_title, u.avatar_url, u.rank_title, u.rank_emblem_url, u.created_at, r.name as role_name,
               COALESCE(sa.current_score, 5000) as current_score
        FROM users u
        LEFT JOIN user_roles ur ON u.id = ur.user_id
@@ -1019,7 +1021,7 @@ app.get('/api/admin/citizens/:id', authenticateToken, requireRole(['admin']), as
 
 // Cadastrar novo Usuário pelo Admin (com Título Personalizado, Nível e Foto)
 app.post('/api/admin/citizens', authenticateToken, requireRole(['admin']), async (req, res) => {
-  const { username, email, celular, password, role = 'usuario', hierarchy_title, avatar_url } = req.body;
+  const { username, email, celular, password, role = 'usuario', hierarchy_title, avatar_url, rank_title, rank_emblem_url } = req.body;
 
   if (!username) {
     return res.status(400).json({ error: 'Nickname é obrigatório.' });
@@ -1050,11 +1052,12 @@ app.post('/api/admin/citizens', authenticateToken, requireRole(['admin']), async
 
     const hashed = await bcrypt.hash(password || 'usuario123', 10);
     const targetTitle = hierarchy_title || (role === 'admin' ? 'Administrador do Sistema' : 'Usuário Cívico');
+    const targetRank = rank_title || 'Recruta';
 
     const userRes = await client.query(
-      `INSERT INTO users (username, email, celular, password_hash, hierarchy_title, avatar_url, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'active') RETURNING id`,
-      [username, email || null, celular || null, hashed, targetTitle, avatar_url || null]
+      `INSERT INTO users (username, email, celular, password_hash, hierarchy_title, avatar_url, rank_title, rank_emblem_url, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active') RETURNING id`,
+      [username, email || null, celular || null, hashed, targetTitle, avatar_url || null, targetRank, rank_emblem_url || null]
     );
     const newUserId = userRes.rows[0].id;
 
@@ -1087,7 +1090,7 @@ app.post('/api/admin/citizens', authenticateToken, requireRole(['admin']), async
 // Atualizar Usuário pelo Admin (Editar Nível de Acesso, Título Personalizado e Foto)
 app.put('/api/admin/citizens/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
   const citizenId = req.params.id;
-  const { username, email, celular, role, hierarchy_title, avatar_url, status } = req.body;
+  const { username, email, celular, role, hierarchy_title, avatar_url, rank_title, rank_emblem_url, status } = req.body;
 
   const client = await pool.connect();
   try {
@@ -1120,6 +1123,14 @@ app.put('/api/admin/citizens/:id', authenticateToken, requireRole(['admin']), as
 
     if (avatar_url !== undefined) {
       await client.query('UPDATE users SET avatar_url = $1 WHERE id = $2', [avatar_url || null, citizenId]);
+    }
+
+    if (rank_title !== undefined && rank_title.trim() !== '') {
+      await client.query('UPDATE users SET rank_title = $1 WHERE id = $2', [rank_title.trim(), citizenId]);
+    }
+
+    if (rank_emblem_url !== undefined) {
+      await client.query('UPDATE users SET rank_emblem_url = $1 WHERE id = $2', [rank_emblem_url || null, citizenId]);
     }
 
     if (status && ['active', 'inactive', 'blocked'].includes(status)) {
@@ -1631,6 +1642,97 @@ app.post('/api/democracy-events/:id/register', authenticateToken, async (req, re
     res.status(500).json({ error: 'Erro ao processar inscrição: ' + err.message });
   } finally {
     client.release();
+  }
+});
+
+// Listar participantes inscritos em um evento da democracia
+app.get('/api/democracy-events/:id/participants', authenticateToken, async (req, res) => {
+  const eventId = req.params.id;
+  try {
+    const participantsRes = await pool.query(`
+      SELECT u.id, u.username, u.hierarchy_title, u.avatar_url, u.email, dep.registered_at
+      FROM democracy_event_participants dep
+      JOIN users u ON dep.user_id = u.id
+      WHERE dep.event_id = $1
+      ORDER BY dep.registered_at ASC
+    `, [eventId]);
+    res.json(participantsRes.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao listar inscritos do evento: ' + err.message });
+  }
+});
+
+// Disparar notificação Webhook para integração WhatsApp (WAHA)
+app.post('/api/democracy-events/:id/send-webhook', authenticateToken, async (req, res) => {
+  const eventId = req.params.id;
+  const { webhook_url, phone, custom_message } = req.body;
+
+  if (!webhook_url) {
+    return res.status(400).json({ error: 'A URL do Webhook (WAHA) é obrigatória.' });
+  }
+
+  try {
+    const eventRes = await pool.query('SELECT * FROM democracy_events WHERE id = $1', [eventId]);
+    if (eventRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Evento da democracia não encontrado.' });
+    }
+
+    const ev = eventRes.rows[0];
+    const formattedDate = new Date(ev.event_date).toLocaleString('pt-BR', {
+      weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+
+    const defaultText = custom_message || 
+      `*🏛️ EVENTO DA DEMOCRACIA: ${ev.title.toUpperCase()}*\n\n` +
+      `📅 *Data/Hora:* ${formattedDate}\n` +
+      (ev.location ? `📍 *Local:* ${ev.location}\n` : '') +
+      `🏷️ *Categoria:* ${ev.category.toUpperCase()}\n` +
+      (ev.description ? `📝 *Descrição:* ${ev.description}\n` : '') +
+      (ev.registration_url ? `🔗 *Link:* ${ev.registration_url}\n` : '') +
+      `\n_Mensagem Oficial — Índice de Lealdade Cívica (ILC)_`;
+
+    let chatId = phone ? phone.trim().replace(/\D/g, '') : '';
+    if (chatId && !chatId.includes('@')) {
+      chatId = `${chatId}@c.us`;
+    }
+
+    const wahaPayload = {
+      chatId: chatId || undefined,
+      text: defaultText,
+      session: 'default',
+      event: 'democracy_event_notification',
+      event_data: {
+        id: ev.id,
+        title: ev.title,
+        description: ev.description,
+        location: ev.location,
+        event_date: ev.event_date,
+        category: ev.category,
+        registration_url: ev.registration_url
+      }
+    };
+
+    const response = await fetch(webhook_url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(wahaPayload)
+    });
+
+    const respText = await response.text();
+
+    await pool.query(
+      `INSERT INTO audit_logs (actor_user_id, entity_name, entity_id, action, new_data)
+       VALUES ($1, 'democracy_events', $2, 'send_whatsapp_webhook', $3)`,
+      [req.user.id, eventId, JSON.stringify({ webhook_url, phone, status: response.status })]
+    );
+
+    if (response.ok) {
+      return res.json({ success: true, message: 'Notificação enviada via Webhook WAHA com sucesso!' });
+    } else {
+      return res.status(400).json({ error: `Webhook respondeu com status ${response.status}: ${respText.substring(0, 150)}` });
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao disparar Webhook WAHA: ' + err.message });
   }
 });
 

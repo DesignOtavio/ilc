@@ -1,41 +1,72 @@
 import React from 'react';
 
-const CertificatesGrid = ({ certificates }) => {
-  const allCerts = [
-    { key: 'Mérito Cívico', points: 100, desc: 'Concedido ao cidadão que atinge seus primeiros 100 pontos acumulados em atos de cooperação social.' },
-    { key: 'Serviço Distinto', points: 500, desc: 'Reconhecimento oficial por 500 pontos acumulados em atividades de apoio e valor militar/cívico.' },
-    { key: 'Excelência Nacional', points: 1000, desc: 'Diploma solene outorgado por expressiva contribuição cívica nacional, somando 1.000 pontos.' },
-    { key: 'Honra Suprema', points: 5000, desc: 'Ordem máxima da lealdade nacional. Reservado para cidadãos que dedicaram 5.000 pontos em mérito cívico.' }
+const CertificatesGrid = ({ certificates = [] }) => {
+  const officialDecorations = [
+    {
+      key: 'Estrela da Democracia',
+      icon: '🌟',
+      desc: 'Concedida por atos de coragem excepcionais em combate e serviço cívico extraordinário.',
+      points: 100
+    },
+    {
+      key: 'Ordem da Prosperidade',
+      icon: '⚙️',
+      desc: 'Para quem impulsionou a economia, indústria, inovação ou infraestrutura nacional.',
+      points: 500
+    },
+    {
+      key: 'Medalha da Verdade',
+      icon: '📖',
+      desc: 'Para serviços excepcionais ao Ministério da Verdade, transparência e à informação.',
+      points: 1000
+    },
+    {
+      key: 'Cruz da Defesa Nacional',
+      icon: '⚔️',
+      desc: 'Por bravura notável na defesa do território, da soberania cívica e do povo.',
+      points: 2000
+    },
+    {
+      key: 'Medalha da Expansão',
+      icon: '🌐',
+      desc: 'Concedida pela conquista, integração ou incorporação de novos territórios e parcerias.',
+      points: 3500
+    },
+    {
+      key: 'Ordem da Unidade',
+      icon: '🤝',
+      desc: 'Para civis e militares que fortaleceram a coesão, a harmonia e a unidade da nação.',
+      points: 5000
+    },
+    {
+      key: 'Ordem Suprema do Alto Comando',
+      icon: '🎖️',
+      desc: 'A maior honra da Democracia Gerenciada, concedida a poucos que serviram além do dever.',
+      points: 8000
+    }
   ];
 
   return (
-    <div className="certificates-grid">
-      {allCerts.map(cert => {
-        const userCert = certificates.find(uc => uc.name === cert.key);
+    <div className="decorations-grid">
+      {officialDecorations.map(dec => {
+        const userCert = certificates.find(uc => 
+          uc.name === dec.key || 
+          uc.name.toLowerCase().includes(dec.key.toLowerCase().substring(0, 6))
+        );
         const isUnlocked = !!userCert;
-        const dateString = isUnlocked ? new Date(userCert.granted_at).toLocaleDateString('pt-BR') : 'BLOQUEADO';
+        const dateString = isUnlocked 
+          ? new Date(userCert.granted_at || Date.now()).toLocaleDateString('pt-BR') 
+          : null;
         
         return (
-          <div key={cert.key} className={`certificate-banknote ${isUnlocked ? 'unlocked' : 'locked'}`}>
-            <div className="border-lines"></div>
-            <div className="banknote-header">
-              <span>REPÚBLICA CÍVICA NACIONAL</span>
-              <span>VALOR SOCIAL: {cert.points} PTS</span>
+          <div key={dec.key} className={`decoration-card ${isUnlocked ? 'unlocked' : 'locked'}`}>
+            <div className="decoration-icon-box">
+              <span>{dec.icon}</span>
             </div>
-            <div className={`banknote-body ${isUnlocked ? 'unlocked' : ''}`}>
-              <h3 className="banknote-title">{cert.key.toUpperCase()}</h3>
-              <p className="banknote-desc">{cert.desc}</p>
-            </div>
-            <div className="banknote-footer">
-              <div>
-                <span>REGISTRO: {isUnlocked ? userCert.id.substring(0, 8).toUpperCase() : 'PENDENTE'}</span><br />
-                <span>OUTORGA: {dateString}</span>
-              </div>
-              {isUnlocked ? (
-                <div className="banknote-stamp">OUTORGADO</div>
-              ) : (
-                <div className="banknote-stamp" style={{ borderColor: '#555', color: '#555' }}>PENDENTE</div>
-              )}
+            <h4 className="decoration-title">{dec.key.toUpperCase()}</h4>
+            <p className="decoration-desc">{dec.desc}</p>
+            <div className={`decoration-status-pill ${isUnlocked ? 'granted' : 'locked'}`}>
+              {isUnlocked ? `🎖️ OUTORGADO (${dateString})` : `🔒 REQUER ${dec.points} PTS`}
             </div>
           </div>
         );
@@ -45,3 +76,4 @@ const CertificatesGrid = ({ certificates }) => {
 };
 
 export default CertificatesGrid;
+
