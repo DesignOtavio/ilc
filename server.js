@@ -13,7 +13,8 @@ dotenv.config();
 const app = express();
 app.set('trust proxy', 1); // Confia em proxies reversos (Nginx/Easypanel/Cloudflare) para HTTPS e cookies
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Sessão para suportar o fluxo OAuth do Google
 app.use(session({

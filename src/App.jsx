@@ -630,7 +630,6 @@ function App() {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
 
-    // Validar tipo MIME real (não apenas extensão)
     const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
     if (!allowedTypes.includes(file.type)) {
       showToast('Tipo Inválido', 'Apenas imagens JPEG, PNG, GIF, WebP ou SVG são permitidas.', 'warning');
@@ -638,26 +637,72 @@ function App() {
       return;
     }
 
-    // Limitar a 2MB
-    if (file.size > 2 * 1024 * 1024) {
-      showToast('Tamanho Excedido', 'A imagem deve ter no máximo 2MB.', 'warning');
+    if (file.size > 15 * 1024 * 1024) {
+      showToast('Tamanho Excedido', 'Selecione uma foto de até 15MB.', 'warning');
       e.target.value = '';
       return;
     }
 
     const reader = new FileReader();
     reader.onloadend = () => {
-      // Garantia extra: verificar que o resultado é um data URI de imagem
-      if (!reader.result.startsWith('data:image/')) {
+      const dataUrl = reader.result;
+      if (!dataUrl || !dataUrl.startsWith('data:image/')) {
         showToast('Arquivo Inválido', 'O arquivo selecionado não é uma imagem válida.', 'warning');
         e.target.value = '';
         return;
       }
-      setInputAvatarUrl(reader.result);
-      showToast('Imagem Carregada', 'Sua foto está pronta. Clique em "Salvar na Carteira" para confirmar.', 'info');
+
+      if (file.type === 'image/svg+xml') {
+        setInputAvatarUrl(dataUrl);
+        showToast('Imagem Carregada', 'Sua foto está pronta. Clique em "Salvar na Carteira" para confirmar.', 'info');
+        return;
+      }
+
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_SIZE = 350;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_SIZE) {
+            height = Math.round(height * (MAX_SIZE / width));
+            width = MAX_SIZE;
+          }
+        } else {
+          if (height > MAX_SIZE) {
+            width = Math.round(width * (MAX_SIZE / height));
+            height = MAX_SIZE;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+
+        let quality = 0.82;
+        let compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+
+        while (compressedDataUrl.length > 200 * 1024 && quality > 0.3) {
+          quality -= 0.15;
+          compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+        }
+
+        const sizeInKB = Math.round((compressedDataUrl.length * 3 / 4) / 1024);
+        setInputAvatarUrl(compressedDataUrl);
+        showToast('Compressão Concluída', `Sua foto foi comprimida para ${sizeInKB} KB e está pronta para salvar.`, 'success');
+      };
+      img.onerror = () => {
+        showToast('Erro de Imagem', 'Não foi possível processar a imagem.', 'warning');
+      };
+      img.src = dataUrl;
     };
     reader.onerror = () => {
-      showToast('Erro de Leitura', 'Não foi possível ler o arquivo. Tente novamente.', 'warning');
+      showToast('Erro de Leitura', 'Não foi possível ler o arquivo.', 'warning');
     };
     reader.readAsDataURL(file);
   };
@@ -2078,7 +2123,27 @@ function App() {
             </div>
 
             <div className="form-group">
-              <label>OU ENVIAR FOTO DO COMPUTADOR</label>
+              <label>📸 TIRAR FOTO COM A CÂMERA (CELULAR / WEBCAM)</label>
+              <input
+                type="file"
+                accept="image/*"
+                capture="user"
+                id="camera-input-file"
+                onChange={handleFileUpload}
+                style={{ display: 'none' }}
+              />
+              <button
+                type="button"
+                className="state-btn outline gold-glow"
+                onClick={() => document.getElementById('camera-input-file').click()}
+                style={{ width: '100%', padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer' }}
+              >
+                📷 ABRIR CÂMERA E TIRAR FOTO
+              </button>
+            </div>
+
+            <div className="form-group">
+              <label>📁 OU ENVIAR DA GALERIA / COMPUTADOR</label>
               <input type="file" accept="image/*" onChange={handleFileUpload} className="file-input" />
             </div>
 
