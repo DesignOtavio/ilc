@@ -2229,8 +2229,7 @@ function App() {
         <div className="modal-card">
           <h2 className="modal-title">📲 ENVIAR PARA WHATSAPP</h2>
           <p className="modal-desc">
-            Envie uma mensagem sobre o evento diretamente para o grupo do WhatsApp da Democracia Gerenciada.
-            A mensagem será enviada via <strong>WAHA</strong> configurado no servidor.
+            Envie uma mensagem sobre o evento diretamente para o grupo oficial da Democracia Gerenciada no WhatsApp.
           </p>
 
           <form onSubmit={handleSendWahaWebhook}>
