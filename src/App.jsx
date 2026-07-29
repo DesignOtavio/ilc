@@ -101,15 +101,13 @@ function App() {
   const [democracyFormOpen, setDemocracyFormOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
 
-  // Modais de Eventos da Democracia (Inscritos & WAHA Webhook)
+  // Modais de Eventos da Democracia (Inscritos & WhatsApp)
   const [participantsModalOpen, setParticipantsModalOpen] = useState(false);
   const [selectedEventParticipants, setSelectedEventParticipants] = useState([]);
   const [selectedEventTitle, setSelectedEventTitle] = useState('');
-  
+
   const [wahaModalOpen, setWahaModalOpen] = useState(false);
   const [wahaEvent, setWahaEvent] = useState(null);
-  const [wahaWebhookUrl, setWahaWebhookUrl] = useState(localStorage.getItem('ilc_waha_webhook') || '');
-  const [wahaPhone, setWahaPhone] = useState('');
   const [wahaCustomMessage, setWahaCustomMessage] = useState('');
   const [wahaSending, setWahaSending] = useState(false);
 
@@ -468,15 +466,8 @@ function App() {
 
   const handleSendWahaWebhook = async (e) => {
     e.preventDefault();
-    if (!wahaWebhookUrl) {
-      showToast('Validação', 'Informe a URL do Webhook do WAHA.', 'warning');
-      return;
-    }
-
     setWahaSending(true);
     try {
-      localStorage.setItem('ilc_waha_webhook', wahaWebhookUrl);
-
       const res = await fetch(`${API_BASE}/democracy-events/${wahaEvent.id}/send-webhook`, {
         method: 'POST',
         headers: {
@@ -484,8 +475,6 @@ function App() {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          webhook_url: wahaWebhookUrl,
-          phone: wahaPhone,
           custom_message: wahaCustomMessage
         })
       });
@@ -493,10 +482,10 @@ function App() {
       const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
 
-      showToast('Notificação WhatsApp', data.message, 'success');
+      showToast('📲 WhatsApp Enviado', data.message, 'success');
       setWahaModalOpen(false);
     } catch (err) {
-      showToast('Erro no Webhook WAHA', err.message, 'warning');
+      showToast('Erro ao Enviar WhatsApp', err.message, 'warning');
     } finally {
       setWahaSending(false);
     }
@@ -1631,7 +1620,7 @@ function App() {
                           👥 INSCRITOS ({ev.participant_count})
                         </button>
                         <button className="sim-btn citizen-high" style={{ fontSize: '11px' }} onClick={() => openWahaModal(ev)}>
-                          📲 WAHA (WHATSAPP)
+                          📲 WHATSAPP
                         </button>
                         {canEdit && (
                           <>
@@ -2235,50 +2224,31 @@ function App() {
         </div>
       </div>
 
-      {/* MODAL INTEGRAÇÃO WHATSAPP (WAHA WEBHOOK) */}
+      {/* MODAL NOTIFICAR WHATSAPP */}
       <div className={`modal-overlay ${wahaModalOpen ? 'active' : ''}`}>
         <div className="modal-card">
-          <h2 className="modal-title">📲 NOTIFICAR WHATSAPP (WAHA)</h2>
-          <p className="modal-desc">Dispare um Webhook HTTP para o seu servidor WAHA (WhatsApp HTTP API) ou n8n/Make com os dados deste evento.</p>
-          
+          <h2 className="modal-title">📲 ENVIAR PARA WHATSAPP</h2>
+          <p className="modal-desc">
+            Envie uma mensagem sobre o evento diretamente para o grupo do WhatsApp da Democracia Gerenciada.
+            A mensagem será enviada via <strong>WAHA</strong> configurado no servidor.
+          </p>
+
           <form onSubmit={handleSendWahaWebhook}>
             <div className="form-group">
-              <label>URL DO WEBHOOK WAHA / HTTP ENDPOINT *</label>
-              <input 
-                type="url" 
-                required 
-                placeholder="Ex: https://waha.meudominio.com/api/sendText ou webhook URL"
-                value={wahaWebhookUrl} 
-                onChange={e => setWahaWebhookUrl(e.target.value)} 
-              />
-              <span className="field-desc">A requisição enviará o payload no padrão da API WAHA (chatId + text).</span>
-            </div>
-
-            <div className="form-group">
-              <label>TELEFONE DO DESTINATÁRIO (OPCIONAL)</label>
-              <input 
-                type="text" 
-                placeholder="Ex: 5511999999999 (número com DDD)" 
-                value={wahaPhone} 
-                onChange={e => setWahaPhone(e.target.value)} 
-              />
-              <span className="field-desc">Se preenchido, envia para o número específico (`chatId: 55...@c.us`).</span>
-            </div>
-
-            <div className="form-group">
               <label>MENSAGEM DE NOTIFICAÇÃO</label>
-              <textarea 
-                rows="5"
-                value={wahaCustomMessage} 
-                onChange={e => setWahaCustomMessage(e.target.value)} 
+              <textarea
+                rows="7"
+                value={wahaCustomMessage}
+                onChange={e => setWahaCustomMessage(e.target.value)}
+                style={{ fontFamily: 'monospace', fontSize: '12px', lineHeight: '1.6' }}
               />
-              <span className="field-desc">Texto pré-formatado do evento. Pode ser customizado antes de enviar.</span>
+              <span className="field-desc">Texto pré-formatado do evento. Edite antes de enviar se preferir.</span>
             </div>
 
             <div className="form-buttons">
               <button type="button" className="state-btn secondary" onClick={() => setWahaModalOpen(false)}>CANCELAR</button>
               <button type="submit" className="state-btn primary gold-glow" disabled={wahaSending}>
-                {wahaSending ? 'ENVIANDO...' : '📲 ENVIAR VIA WAHA'}
+                {wahaSending ? 'ENVIANDO...' : '📲 ENVIAR WHATSAPP'}
               </button>
             </div>
           </form>

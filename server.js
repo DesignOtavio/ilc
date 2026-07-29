@@ -1723,14 +1723,23 @@ app.get('/api/democracy-events/:id/participants', authenticateToken, async (req,
   }
 });
 
-// Disparar notificação Webhook para integração WhatsApp (WAHA)
+// Disparar notificação WhatsApp via WAHA (configuração por variáveis de ambiente)
 app.post('/api/democracy-events/:id/send-webhook', authenticateToken, async (req, res) => {
   const eventId = req.params.id;
-  const { webhook_url, phone, custom_message } = req.body;
+  const { custom_message } = req.body;
 
-  if (!webhook_url) {
-    return res.status(400).json({ error: 'A URL do Webhook (WAHA) é obrigatória.' });
+  // Credenciais e endpoint vindos 100% do .env
+  const wahaBaseUrl = process.env.WAHA_BASE_URL;
+  const wahaApiKey  = process.env.WAHA_API_KEY;
+  const wahaSession = process.env.WAHA_SESSION || 'default';
+  const wahaChatId  = process.env.WAHA_DEFAULT_CHAT_ID;
+
+  if (!wahaBaseUrl || !wahaChatId) {
+    return res.status(500).json({ error: 'Integração WhatsApp não configurada no servidor. Verifique WAHA_BASE_URL e WAHA_DEFAULT_CHAT_ID no .env.' });
   }
+
+  // Endpoint WAHA para envio de texto
+  const wahaEndpoint = `${wahaBaseUrl.replace(/\/$/, '')}/api/sendText`;
 
   try {
     const eventRes = await pool.query('SELECT * FROM democracy_events WHERE id = $1', [eventId]);
@@ -1743,7 +1752,7 @@ app.post('/api/democracy-events/:id/send-webhook', authenticateToken, async (req
       weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
     });
 
-    const defaultText = custom_message || 
+    const messageText = custom_message ||
       `*🏛️ EVENTO DA DEMOCRACIA: ${ev.title.toUpperCase()}*\n\n` +
       `📅 *Data/Hora:* ${formattedDate}\n` +
       (ev.location ? `📍 *Local:* ${ev.location}\n` : '') +
@@ -1752,30 +1761,23 @@ app.post('/api/democracy-events/:id/send-webhook', authenticateToken, async (req
       (ev.registration_url ? `🔗 *Link:* ${ev.registration_url}\n` : '') +
       `\n_Mensagem Oficial — Índice de Lealdade Cívica (ILC)_`;
 
-    let chatId = phone ? phone.trim().replace(/\D/g, '') : '';
-    if (chatId && !chatId.includes('@')) {
-      chatId = `${chatId}@c.us`;
-    }
-
+    // Payload no padrão WAHA /api/sendText
     const wahaPayload = {
-      chatId: chatId || undefined,
-      text: defaultText,
-      session: 'default',
-      event: 'democracy_event_notification',
-      event_data: {
-        id: ev.id,
-        title: ev.title,
-        description: ev.description,
-        location: ev.location,
-        event_date: ev.event_date,
-        category: ev.category,
-        registration_url: ev.registration_url
-      }
+      chatId: wahaChatId,
+      text: messageText,
+      session: wahaSession
     };
 
-    const response = await fetch(webhook_url, {
+    const wahaHeaders = {
+      'Content-Type': 'application/json'
+    };
+    if (wahaApiKey) {
+      wahaHeaders['X-Api-Key'] = wahaApiKey;
+    }
+
+    const response = await fetch(wahaEndpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: wahaHeaders,
       body: JSON.stringify(wahaPayload)
     });
 
@@ -1783,17 +1785,22 @@ app.post('/api/democracy-events/:id/send-webhook', authenticateToken, async (req
 
     await pool.query(
       `INSERT INTO audit_logs (actor_user_id, entity_name, entity_id, action, new_data)
-       VALUES ($1, 'democracy_events', $2, 'send_whatsapp_webhook', $3)`,
-      [req.user.id, eventId, JSON.stringify({ webhook_url, phone, status: response.status })]
+       VALUES ($1, 'democracy_events', $2, 'send_whatsapp_notification', $3)`,
+      [req.user.id, eventId, JSON.stringify({
+        endpoint: wahaEndpoint,
+        chat_id: wahaChatId,
+        session: wahaSession,
+        http_status: response.status
+      })]
     );
 
     if (response.ok) {
-      return res.json({ success: true, message: 'Notificação enviada via Webhook WAHA com sucesso!' });
+      return res.json({ success: true, message: '✅ Notificação enviada com sucesso para o WhatsApp!' });
     } else {
-      return res.status(400).json({ error: `Webhook respondeu com status ${response.status}: ${respText.substring(0, 150)}` });
+      return res.status(400).json({ error: `WAHA respondeu com erro ${response.status}: ${respText.substring(0, 200)}` });
     }
   } catch (err) {
-    res.status(500).json({ error: 'Erro ao disparar Webhook WAHA: ' + err.message });
+    res.status(500).json({ error: 'Erro ao enviar notificação WhatsApp: ' + err.message });
   }
 });
 
