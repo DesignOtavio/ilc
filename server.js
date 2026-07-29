@@ -765,6 +765,65 @@ app.put('/api/citizen/update-profile', authenticateToken, async (req, res) => {
   const { nickname, avatar_url, hierarchy_title } = req.body;
   const userId = req.user.id;
 
+  // ============================================
+  // VALIDAÇÃO E SANEAÇÃO DO AVATAR URL
+  // ============================================
+  let sanitizedAvatarUrl = undefined;
+
+  if (avatar_url !== undefined) {
+    if (avatar_url === null || avatar_url === '') {
+      // Permitir remover a foto
+      sanitizedAvatarUrl = null;
+    } else if (typeof avatar_url !== 'string') {
+      return res.status(400).json({ error: 'URL de avatar inválida.' });
+    } else if (avatar_url.startsWith('data:')) {
+      // Apenas data URIs de imagem são permitidos
+      const validDataUriPattern = /^data:image\/(jpeg|jpg|png|gif|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/;
+      if (!validDataUriPattern.test(avatar_url)) {
+        return res.status(400).json({ error: 'Somente imagens em formato JPEG, PNG, GIF, WebP ou SVG são permitidas.' });
+      }
+      // Limitar tamanho do Base64 (~2MB de imagem após encode)
+      if (avatar_url.length > 2.8 * 1024 * 1024) {
+        return res.status(400).json({ error: 'Imagem muito grande. O limite é 2MB.' });
+      }
+      sanitizedAvatarUrl = avatar_url;
+    } else {
+      // URLs externas: validar protocolo e formato
+      let parsedUrl;
+      try {
+        parsedUrl = new URL(avatar_url);
+      } catch (_) {
+        return res.status(400).json({ error: 'URL da foto de perfil inválida.' });
+      }
+
+      if (!['https:', 'http:'].includes(parsedUrl.protocol)) {
+        return res.status(400).json({ error: 'A URL da foto deve usar o protocolo HTTP ou HTTPS.' });
+      }
+
+      // Bloquear hostnames perigosos (localhost, IPs internos)
+      const blockedHosts = /^(localhost|127\.|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|0\.0\.0\.0)/;
+      if (blockedHosts.test(parsedUrl.hostname)) {
+        return res.status(400).json({ error: 'Não é permitido usar endereços locais como foto de perfil.' });
+      }
+
+      // Verificar extensão de arquivo (permissivo, não obrigatório pois CDNs podem omitir)
+      const allowedExtensions = /\.(jpg|jpeg|png|gif|webp|svg|avif)(\?.*)?$/i;
+      const urlPath = parsedUrl.pathname.toLowerCase();
+      // Apenas bloquear extensões claramente perigosas
+      const blockedExtensions = /\.(html|htm|js|php|exe|sh|bat|py|rb|pl)$/i;
+      if (blockedExtensions.test(urlPath)) {
+        return res.status(400).json({ error: 'Tipo de arquivo não permitido como foto de perfil.' });
+      }
+
+      // Limitar tamanho da URL
+      if (avatar_url.length > 2048) {
+        return res.status(400).json({ error: 'URL da foto muito longa (máximo 2048 caracteres).' });
+      }
+
+      sanitizedAvatarUrl = avatar_url;
+    }
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -778,20 +837,21 @@ app.put('/api/citizen/update-profile', authenticateToken, async (req, res) => {
       await client.query('UPDATE users SET username = $1 WHERE id = $2', [nickname.trim(), userId]);
     }
 
-    if (avatar_url !== undefined) {
-      await client.query('UPDATE users SET avatar_url = $1 WHERE id = $2', [avatar_url || null, userId]);
+    if (sanitizedAvatarUrl !== undefined) {
+      await client.query('UPDATE users SET avatar_url = $1 WHERE id = $2', [sanitizedAvatarUrl, userId]);
     }
 
     if (hierarchy_title !== undefined && hierarchy_title.trim() !== '') {
       await client.query('UPDATE users SET hierarchy_title = $1 WHERE id = $2', [hierarchy_title.trim(), userId]);
     }
 
-    await client.query('UPDATE users SET updated_at = NOW() WHERE id = $2', [userId]);
+    // BUG FIX: Corrigido de $2 para $1 (sem parâmetro adicional)
+    await client.query('UPDATE users SET updated_at = NOW() WHERE id = $1', [userId]);
 
     await client.query(
       `INSERT INTO audit_logs (actor_user_id, entity_name, entity_id, action, new_data)
        VALUES ($1, 'users', $2, 'update_user_profile', $3)`,
-      [userId, userId, JSON.stringify({ nickname, avatar_url: avatar_url ? 'updated' : 'unchanged', hierarchy_title })]
+      [userId, userId, JSON.stringify({ nickname, avatar_url: sanitizedAvatarUrl !== undefined ? 'updated' : 'unchanged', hierarchy_title })]
     );
 
     await client.query('COMMIT');
@@ -820,6 +880,7 @@ app.put('/api/citizen/update-profile', authenticateToken, async (req, res) => {
     client.release();
   }
 });
+
 
 // Retrocompatibilidade para antiga rota update-nickname
 app.put('/api/citizen/update-nickname', authenticateToken, async (req, res) => {

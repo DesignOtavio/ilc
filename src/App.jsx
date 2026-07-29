@@ -68,6 +68,12 @@ function App() {
   const [editFormUsername, setEditFormUsername] = useState('');
   const [editFormEmail, setEditFormEmail] = useState('');
   const [editFormStatus, setEditFormStatus] = useState('active');
+  const [editFormRank, setEditFormRank] = useState('Recruta');
+  const [editFormRankEmblem, setEditFormRankEmblem] = useState('');
+
+  // Campos de patente ao criar usuário (Admin)
+  const [createRankTitle, setCreateRankTitle] = useState('Recruta');
+  const [createRankEmblem, setCreateRankEmblem] = useState('');
 
   // Detalhe de Usuário Individual (Admin)
   const [detailCitizenId, setDetailCitizenId] = useState(null);
@@ -127,7 +133,33 @@ function App() {
     }, 5000);
   };
 
+  // Limpar sessão e forçar relogin
+  const forceLogout = (reason = 'Sessão expirada. Faça login novamente.') => {
+    setToken(null);
+    setUserRole(null);
+    setUsername(null);
+    setUserHierarchyTitle(null);
+    setUserAvatarUrl(null);
+    setCitizenData(null);
+    setAdminMetrics(null);
+    setDetailCitizenId(null);
+    localStorage.clear();
+    showToast('🔒 Sessão Encerrada', reason, 'warning');
+  };
+
   const parseApiResponse = async (res) => {
+    // Token inválido ou expirado — deslogar automaticamente
+    if (res.status === 401 || res.status === 403) {
+      const text = await res.text();
+      let msg = 'Sessão expirada ou token inválido. Faça login novamente.';
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.error) msg = parsed.error;
+      } catch (_) {}
+      forceLogout(msg);
+      return { error: msg };
+    }
+
     const text = await res.text();
     if (!text) {
       return { error: res.ok ? 'Resposta vazia do servidor.' : `Servidor respondeu sem detalhes (${res.status}).` };
@@ -609,18 +641,38 @@ function App() {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
 
-    if (file.size > 3 * 1024 * 1024) {
-      showToast('Tamanho Excedido', 'Selecione uma imagem de até 3MB.', 'warning');
+    // Validar tipo MIME real (não apenas extensão)
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
+    if (!allowedTypes.includes(file.type)) {
+      showToast('Tipo Inválido', 'Apenas imagens JPEG, PNG, GIF, WebP ou SVG são permitidas.', 'warning');
+      e.target.value = '';
+      return;
+    }
+
+    // Limitar a 2MB
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('Tamanho Excedido', 'A imagem deve ter no máximo 2MB.', 'warning');
+      e.target.value = '';
       return;
     }
 
     const reader = new FileReader();
     reader.onloadend = () => {
+      // Garantia extra: verificar que o resultado é um data URI de imagem
+      if (!reader.result.startsWith('data:image/')) {
+        showToast('Arquivo Inválido', 'O arquivo selecionado não é uma imagem válida.', 'warning');
+        e.target.value = '';
+        return;
+      }
       setInputAvatarUrl(reader.result);
-      showToast('Imagem Carregada', 'Sua foto local está pronta para salvar.', 'info');
+      showToast('Imagem Carregada', 'Sua foto está pronta. Clique em "Salvar na Carteira" para confirmar.', 'info');
+    };
+    reader.onerror = () => {
+      showToast('Erro de Leitura', 'Não foi possível ler o arquivo. Tente novamente.', 'warning');
     };
     reader.readAsDataURL(file);
   };
+
 
   // REQUISIÇÕES DE API: ADMIN
   const fetchAdminMetrics = async () => {
@@ -781,6 +833,8 @@ function App() {
     setEditFormTitle(user.hierarchy_title || (user.role_name === 'admin' ? 'Administrador' : 'Usuário Cívico'));
     setEditFormAvatar(user.avatar_url || '');
     setEditFormStatus(user.status || 'active');
+    setEditFormRank(user.rank_title || 'Recruta');
+    setEditFormRankEmblem(user.rank_emblem_url || '');
     setEditUserModalOpen(true);
   };
 
@@ -800,6 +854,8 @@ function App() {
           role: editFormRole,
           hierarchy_title: editFormTitle,
           avatar_url: editFormAvatar,
+          rank_title: editFormRank,
+          rank_emblem_url: editFormRankEmblem,
           status: editFormStatus
         })
       });
@@ -1250,6 +1306,24 @@ function App() {
                       </div>
                     </div>
                   </div>
+
+                  {/* EMBLEMA DE PATENTE CÍVICA */}
+                  {citizenData.profile.rank_title && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 0', borderTop: '1px solid var(--border-light)', marginTop: '8px' }}>
+                      <div className="rank-emblem-box">
+                        {citizenData.profile.rank_emblem_url ? (
+                          <img src={citizenData.profile.rank_emblem_url} alt="Emblema" className="rank-emblem-img" />
+                        ) : (
+                          <span style={{ fontSize: '32px' }}>🎖️</span>
+                        )}
+                        <span style={{ fontSize: '9px', color: 'var(--gold)', fontFamily: 'var(--font-ui)', fontWeight: 700, letterSpacing: '0.5px', marginTop: '4px', textAlign: 'center' }}>PATENTE</span>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-ui)', letterSpacing: '1px' }}>PATENTE CÍVICA</div>
+                        <div className="rank-title-badge" style={{ marginTop: '4px' }}>🎖️ {citizenData.profile.rank_title}</div>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="card-footer">
                     <div className="score-display">
@@ -2063,6 +2137,41 @@ function App() {
               <label>TÍTULO PERSONALIZADO DA HIERARQUIA *</label>
               <input type="text" required value={editFormTitle} onChange={e => setEditFormTitle(e.target.value)} />
               <span className="field-desc">Título exibido na carteira e nos distintivos do usuário.</span>
+            </div>
+
+            <div className="form-group">
+              <label>🎖️ PATENTE CÍVICA</label>
+              <select value={editFormRank} onChange={e => setEditFormRank(e.target.value)}>
+                <optgroup label="— PRAÇAS —">
+                  <option value="Recruta">Recruta</option>
+                  <option value="Soldado">Soldado</option>
+                  <option value="Cabo">Cabo</option>
+                  <option value="3º Sargento">3º Sargento</option>
+                  <option value="2º Sargento">2º Sargento</option>
+                  <option value="1º Sargento">1º Sargento</option>
+                  <option value="Subtenente">Subtenente</option>
+                </optgroup>
+                <optgroup label="— OFICIAIS —">
+                  <option value="2º Tenente">2º Tenente</option>
+                  <option value="1º Tenente">1º Tenente</option>
+                  <option value="Capitão">Capitão</option>
+                  <option value="Major">Major</option>
+                  <option value="Tenente-Coronel">Tenente-Coronel</option>
+                  <option value="Coronel">Coronel</option>
+                </optgroup>
+                <optgroup label="— ALTO COMANDO —">
+                  <option value="General de Brigada">General de Brigada</option>
+                  <option value="General de Divisão">General de Divisão</option>
+                  <option value="Marechal da Democracia">Marechal da Democracia</option>
+                </optgroup>
+              </select>
+              <span className="field-desc">Patente militar/cívica exibida na Carteira de Identidade.</span>
+            </div>
+
+            <div className="form-group">
+              <label>URL DO EMBLEMA DA PATENTE (OPCIONAL)</label>
+              <input type="text" placeholder="Ex: https://meusite.com/emblemas/coronel.png" value={editFormRankEmblem} onChange={e => setEditFormRankEmblem(e.target.value)} />
+              <span className="field-desc">Imagem PNG/SVG do emblema. Deixe vazio para usar o ícone padrão 🎖️. Veja o guia abaixo para adicionar suas imagens.</span>
             </div>
 
             <div className="form-group">
