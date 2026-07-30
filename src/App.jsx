@@ -313,12 +313,20 @@ function App() {
     const googleToken = params.get('google_token');
     const googleRole = params.get('google_role');
     const googleUsername = params.get('google_username');
+    const googleTitle = params.get('google_title');
+    const googleAvatar = params.get('google_avatar');
     const googleNew = params.get('google_new');
     const googleTemp = params.get('google_temp');
     const googleError = params.get('google_error');
 
     if (googleToken && googleRole && googleUsername) {
-      saveSession(googleToken, googleRole, decodeURIComponent(googleUsername));
+      saveSession(
+        googleToken,
+        googleRole,
+        decodeURIComponent(googleUsername),
+        googleTitle ? decodeURIComponent(googleTitle) : null,
+        googleAvatar ? decodeURIComponent(googleAvatar) : null
+      );
       showToast('Identidade Google Confirmada', 'Foto do perfil e acesso cívico autenticados via Google.', 'success');
       window.history.replaceState({}, '', '/');
     } else if (googleNew === '1' && googleTemp) {

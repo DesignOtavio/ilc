@@ -80,6 +80,12 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     scope: ['profile', 'email']
   }));
 
+  function getSafeAvatarForToken(avatarUrl) {
+    if (!avatarUrl) return null;
+    if (typeof avatarUrl === 'string' && avatarUrl.startsWith('data:')) return null;
+    return avatarUrl;
+  }
+
   // Callback do Google após autenticação
   async function handleGoogleCallback(req, res) {
     const { google_id, email, avatar_url } = req.user;
@@ -107,13 +113,19 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
           currentAvatar = avatar_url;
         }
 
+        const safeAvatar = getSafeAvatarForToken(currentAvatar);
+        const userTitle = user.hierarchy_title || 'Usuário';
+
         const token = jwt.sign(
-          { id: user.id, username: user.username, role: user.role, hierarchy_title: user.hierarchy_title || 'Usuário', avatar_url: currentAvatar },
+          { id: user.id, username: user.username, role: user.role, hierarchy_title: userTitle, avatar_url: safeAvatar },
           JWT_SECRET,
           { expiresIn: '8h' }
         );
         await client.query('COMMIT');
-        return res.redirect(`/?google_token=${token}&google_role=${user.role}&google_username=${encodeURIComponent(user.username)}`);
+        
+        const titleParam = encodeURIComponent(userTitle);
+        const avatarParam = safeAvatar ? `&google_avatar=${encodeURIComponent(safeAvatar)}` : '';
+        return res.redirect(`/?google_token=${token}&google_role=${user.role}&google_username=${encodeURIComponent(user.username)}&google_title=${titleParam}${avatarParam}`);
       }
 
       // Verificar se e-mail já existe em outra conta
@@ -127,7 +139,8 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 
       // Nova conta — redirecionar para completar cadastro com nickname
       await client.query('COMMIT');
-      const tempToken = jwt.sign({ google_id, email, avatar_url, needs_nickname: true }, JWT_SECRET, { expiresIn: '15m' });
+      const safeAvatar = getSafeAvatarForToken(avatar_url);
+      const tempToken = jwt.sign({ google_id, email, avatar_url: safeAvatar, needs_nickname: true }, JWT_SECRET, { expiresIn: '15m' });
       return res.redirect(`/?google_new=1&google_temp=${tempToken}`);
     } catch (err) {
       await client.query('ROLLBACK');
