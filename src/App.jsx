@@ -9,20 +9,25 @@ import mdlQuebrada from './imgs/mdl_quebrada.png';
 import mdlReluzente from './imgs/mdl_reluzente.png';
 const logoImg = logoNorml;
 const getApiBase = () => {
-  if (import.meta.env.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL.replace(/\/$/, '') + '/api';
-  }
-  const custom = localStorage.getItem('ilc_server_url');
-  if (custom) {
-    return custom.replace(/\/$/, '') + '/api';
-  }
-  const isNative = typeof window !== 'undefined' && (
-    window.Capacitor ||
-    window.location.protocol === 'capacitor:' ||
-    window.location.protocol === 'file:'
-  );
-  if (isNative) {
-    return 'http://10.0.2.2:3000/api';
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_BASE_URL) {
+      return import.meta.env.VITE_API_BASE_URL.replace(/\/$/, '') + '/api';
+    }
+    if (typeof localStorage !== 'undefined') {
+      const custom = localStorage.getItem('ilc_server_url');
+      if (custom) {
+        return custom.replace(/\/$/, '') + '/api';
+      }
+    }
+    const isNative = typeof window !== 'undefined' && (
+      window.Capacitor ||
+      (window.location && (window.location.protocol === 'capacitor:' || window.location.protocol === 'file:'))
+    );
+    if (isNative) {
+      return 'http://10.0.2.2:3000/api';
+    }
+  } catch (err) {
+    console.warn('API base resolution fallback:', err);
   }
   return '/api';
 };
