@@ -190,6 +190,24 @@ body {
   display: block;
 }
 
+.auth-link-btn {
+  background: transparent;
+  border: none;
+  color: var(--gold-light);
+  font-family: var(--font-body);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  transition: all 0.2s ease;
+  padding: 0;
+  opacity: 0.9;
+}
+
+.auth-link-btn:hover {
+  color: var(--gold);
+  opacity: 1;
+}
+
 /* ==========================================
    COMPONENTES DE FORMULÁRIO ESTATAIS
    ========================================== */

@@ -135,6 +135,14 @@ function App() {
   const [regCelular, setRegCelular] = useState('');
   const [regPass, setRegPass] = useState('');
 
+  // Forgot / Reset Password Form
+  const [forgotStep, setForgotStep] = useState(1);
+  const [forgotIdentifier, setForgotIdentifier] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+
   // Disparar Notificação (Toast)
   const showToast = (title, desc, type = 'info') => {
     const id = Math.random().toString();
@@ -1069,6 +1077,81 @@ function App() {
     }
   };
 
+  const handleRequestResetCode = async (e) => {
+    e.preventDefault();
+    if (!forgotIdentifier) {
+      showToast('Validação', 'Informe seu nickname, e-mail ou celular.', 'warning');
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: forgotIdentifier })
+      });
+      const data = await parseApiResponse(res);
+      if (!res.ok) throw new Error(data.error);
+
+      showToast('🔑 Código Gerado', data.message, 'success');
+      if (data.code) {
+        setResetCode(data.code);
+      }
+      setForgotStep(2);
+    } catch (err) {
+      showToast('Erro de Recuperação', err.message, 'warning');
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    if (!forgotIdentifier || !resetCode || !newPassword) {
+      showToast('Validação', 'Preencha todos os campos obrigatórios.', 'warning');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      showToast('Validação', 'As senhas digitadas não coincidem.', 'warning');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      showToast('Validação', 'A nova senha deve ter no mínimo 6 caracteres.', 'warning');
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: forgotIdentifier,
+          code: resetCode,
+          newPassword
+        })
+      });
+      const data = await parseApiResponse(res);
+      if (!res.ok) throw new Error(data.error);
+
+      showToast('✅ Senha Alterada', data.message, 'success');
+      setLoginId(forgotIdentifier);
+      setLoginPass('');
+      setAuthTab('login');
+      setForgotStep(1);
+      setResetCode('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      showToast('Erro ao Alterar Senha', err.message, 'warning');
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   const triggerGoogleSignup = () => {
     window.location.href = '/api/auth/google';
   };
@@ -1208,9 +1291,10 @@ function App() {
           <div className="auth-tabs">
             <button className={`auth-tab ${authTab === 'login' ? 'active' : ''}`} onClick={() => setAuthTab('login')}>ENTRAR</button>
             <button className={`auth-tab ${authTab === 'register' ? 'active' : ''}`} onClick={() => setAuthTab('register')}>REGISTRAR</button>
+            <button className={`auth-tab ${authTab === 'forgot' ? 'active' : ''}`} onClick={() => { setAuthTab('forgot'); setForgotStep(1); }}>RECUPERAR SENHA</button>
           </div>
 
-          {authTab === 'login' ? (
+          {authTab === 'login' && (
             <form onSubmit={handleLoginSubmit} className="auth-form active">
               <div className="form-group">
                 <label>IDENTIFICADOR CÍVICO</label>
@@ -1221,9 +1305,24 @@ function App() {
                 <label>SENHA DE ACESSO</label>
                 <input type="password" placeholder="••••••••" required value={loginPass} onChange={e => setLoginPass(e.target.value)} />
               </div>
+              <div style={{ textAlign: 'right', marginTop: '-8px', marginBottom: '16px' }}>
+                <button
+                  type="button"
+                  className="auth-link-btn"
+                  onClick={() => {
+                    setAuthTab('forgot');
+                    setForgotStep(1);
+                    if (loginId) setForgotIdentifier(loginId);
+                  }}
+                >
+                  🔑 Esqueceu ou deseja alterar sua senha?
+                </button>
+              </div>
               <button type="submit" className="state-btn primary gold-glow">AUTENTICAR IDENTIDADE</button>
             </form>
-          ) : (
+          )}
+
+          {authTab === 'register' && (
             <form onSubmit={handleRegisterSubmit} className="auth-form active">
               <div className="form-group">
                 <label>NICKNAME ÚNICO *</label>
@@ -1244,6 +1343,90 @@ function App() {
               </div>
               <button type="submit" className="state-btn success success-glow">SOLICITAR REGISTRO CÍVICO</button>
             </form>
+          )}
+
+          {authTab === 'forgot' && (
+            <div className="auth-form active">
+              {forgotStep === 1 ? (
+                <form onSubmit={handleRequestResetCode}>
+                  <div className="form-group">
+                    <label>IDENTIFICADOR CÍVICO *</label>
+                    <input
+                      type="text"
+                      placeholder="Nickname, e-mail ou celular"
+                      required
+                      value={forgotIdentifier}
+                      onChange={e => setForgotIdentifier(e.target.value)}
+                    />
+                    <span className="field-desc">Informe o e-mail, telefone celular ou nickname cadastrado.</span>
+                  </div>
+                  <button type="submit" className="state-btn primary gold-glow" disabled={resetLoading}>
+                    {resetLoading ? 'PROCESSANDO...' : 'SOLICITAR CÓDIGO DE RECUPERAÇÃO'}
+                  </button>
+                  <div style={{ marginTop: '15px', textAlign: 'center' }}>
+                    <button type="button" className="auth-link-btn" onClick={() => setForgotStep(2)}>
+                      Já possui um código de 6 dígitos? Clique para alterar a senha
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <form onSubmit={handleResetPassword}>
+                  <div className="form-group">
+                    <label>IDENTIFICADOR CÍVICO *</label>
+                    <input
+                      type="text"
+                      placeholder="Nickname, e-mail ou celular"
+                      required
+                      value={forgotIdentifier}
+                      onChange={e => setForgotIdentifier(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>CÓDIGO DE VERIFICAÇÃO (6 DÍGITOS) *</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: 123456"
+                      maxLength={6}
+                      required
+                      value={resetCode}
+                      onChange={e => setResetCode(e.target.value)}
+                    />
+                    <span className="field-desc">Código de 6 dígitos fornecido pelo sistema.</span>
+                  </div>
+                  <div className="form-group">
+                    <label>NOVA SENHA *</label>
+                    <input
+                      type="password"
+                      placeholder="Mínimo 6 caracteres"
+                      required
+                      value={newPassword}
+                      onChange={e => setNewPassword(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>CONFIRMAR NOVA SENHA *</label>
+                    <input
+                      type="password"
+                      placeholder="Repita a nova senha"
+                      required
+                      value={confirmPassword}
+                      onChange={e => setConfirmPassword(e.target.value)}
+                    />
+                  </div>
+                  <button type="submit" className="state-btn success success-glow" disabled={resetLoading}>
+                    {resetLoading ? 'ALTERANDO...' : 'CONFIRMAR E ALTERAR SENHA'}
+                  </button>
+                  <div style={{ marginTop: '15px', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                    <button type="button" className="auth-link-btn" onClick={() => setForgotStep(1)}>
+                      ← Novo código
+                    </button>
+                    <button type="button" className="auth-link-btn" onClick={() => setAuthTab('login')}>
+                      Voltar ao Login
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
           )}
 
           <div className="auth-divider">

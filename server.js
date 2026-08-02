@@ -202,6 +202,8 @@ async function ensureSchemaMigrations() {
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS rank_title VARCHAR(100) DEFAULT \'Recruta\'');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS rank_emblem_url TEXT');
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_code VARCHAR(10)');
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_expires TIMESTAMP WITH TIME ZONE');
   
   try {
     await pool.query('ALTER TABLE roles ALTER COLUMN name TYPE VARCHAR(50)');
@@ -700,6 +702,117 @@ app.post('/api/auth/login', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: 'Erro no servidor durante login: ' + err.message });
+  }
+});
+
+// Solicitar Código de Recuperação de Senha
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const { identifier } = req.body;
+
+  if (!identifier) {
+    return res.status(400).json({ error: 'Informe seu e-mail, celular ou nickname.' });
+  }
+
+  try {
+    const userRes = await pool.query(
+      `SELECT u.id, u.username, u.email, u.celular, u.status, u.password_hash
+       FROM users u
+       WHERE u.email = $1 OR u.celular = $1 OR u.username = $1`,
+      [identifier]
+    );
+
+    if (userRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Nenhum cidadão cadastrado com este identificador.' });
+    }
+
+    const user = userRes.rows[0];
+
+    if (user.status === 'blocked') {
+      return res.status(403).json({ error: 'Seu privilégio de acesso foi SUSPENSO pelo Estado cívico.' });
+    }
+
+    if (!user.password_hash) {
+      return res.status(400).json({ error: 'Esta conta utiliza autenticação social (Google) e não possui senha local.' });
+    }
+
+    // Gerar código aleatório de 6 dígitos
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Salvar código com expiração de 15 minutos
+    await pool.query(
+      `UPDATE users 
+       SET reset_code = $1, reset_expires = NOW() + INTERVAL '15 minutes'
+       WHERE id = $2`,
+      [resetCode, user.id]
+    );
+
+    // Auditoria da solicitação
+    await pool.query(
+      `INSERT INTO audit_logs (actor_user_id, entity_name, entity_id, action, new_data)
+       VALUES ($1, 'users', $2, 'password_recovery_requested', $3)`,
+      [user.id, user.id, JSON.stringify({ identifier, requested_at: new Date() })]
+    );
+
+    res.json({
+      message: 'Código de verificação gerado! Digite o código para redefinir sua senha.',
+      identifier: user.username || identifier,
+      code: resetCode
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao processar solicitação: ' + err.message });
+  }
+});
+
+// Alterar / Redefinir Senha com Código de Verificação
+app.post('/api/auth/reset-password', async (req, res) => {
+  const { identifier, code, newPassword } = req.body;
+
+  if (!identifier || !code || !newPassword) {
+    return res.status(400).json({ error: 'Todos os campos são obrigatórios (identificador, código e nova senha).' });
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'A nova senha deve possuir pelo menos 6 caracteres.' });
+  }
+
+  try {
+    const userRes = await pool.query(
+      `SELECT u.id, u.username
+       FROM users u
+       WHERE (u.email = $1 OR u.celular = $1 OR u.username = $1)
+         AND u.reset_code = $2
+         AND u.reset_expires > NOW()`,
+      [identifier, code.trim()]
+    );
+
+    if (userRes.rows.length === 0) {
+      return res.status(400).json({ error: 'Código de verificação inválido ou expirado. Solicite um novo código.' });
+    }
+
+    const user = userRes.rows[0];
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    // Atualizar senha e revogar código
+    await pool.query(
+      `UPDATE users
+       SET password_hash = $1, reset_code = NULL, reset_expires = NULL, updated_at = NOW()
+       WHERE id = $2`,
+      [passwordHash, user.id]
+    );
+
+    // Auditoria
+    await pool.query(
+      `INSERT INTO audit_logs (actor_user_id, entity_name, entity_id, action, new_data)
+       VALUES ($1, 'users', $2, 'password_reset_completed', $3)`,
+      [user.id, user.id, JSON.stringify({ completed_at: new Date() })]
+    );
+
+    res.json({
+      message: 'Senha alterada com sucesso! Você já pode realizar o login com sua nova senha.',
+      username: user.username
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao alterar a senha: ' + err.message });
   }
 });
 
