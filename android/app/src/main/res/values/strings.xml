@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ILC Cidadão</string>
+    <string name="title_activity_main">ILC Cidadão</string>
+    <string name="package_name">com.ilc.cidadao</string>
+    <string name="custom_url_scheme">com.ilc.cidadao</string>
+</resources>

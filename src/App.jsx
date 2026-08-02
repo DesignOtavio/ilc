@@ -7,10 +7,27 @@ import logoReluzindo from './imgs/lgo_reluzindo.png';
 import mdlNormal from './imgs/mdl_normal.png';
 import mdlQuebrada from './imgs/mdl_quebrada.png';
 import mdlReluzente from './imgs/mdl_reluzente.png';
-
 const logoImg = logoNorml;
+const getApiBase = () => {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL.replace(/\/$/, '') + '/api';
+  }
+  const custom = localStorage.getItem('ilc_server_url');
+  if (custom) {
+    return custom.replace(/\/$/, '') + '/api';
+  }
+  const isNative = typeof window !== 'undefined' && (
+    window.Capacitor ||
+    window.location.protocol === 'capacitor:' ||
+    window.location.protocol === 'file:'
+  );
+  if (isNative) {
+    return 'http://10.0.2.2:3000/api';
+  }
+  return '/api';
+};
 
-const API_BASE = '/api';
+const API_BASE = getApiBase();
 
 function App() {
   // Estado de Autenticação
@@ -142,6 +159,24 @@ function App() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
+
+  // Configuração de Servidor API (APK / Mobile)
+  const [serverModalOpen, setServerModalOpen] = useState(false);
+  const [customServerInput, setCustomServerInput] = useState(localStorage.getItem('ilc_server_url') || '');
+
+  const handleSaveServerUrl = (e) => {
+    e.preventDefault();
+    if (!customServerInput.trim()) {
+      localStorage.removeItem('ilc_server_url');
+    } else {
+      localStorage.setItem('ilc_server_url', customServerInput.trim());
+    }
+    setServerModalOpen(false);
+    showToast('Servidor Configurado', 'Endereço da API atualizado. Reiniciando conexões...', 'success');
+    setTimeout(() => {
+      window.location.reload();
+    }, 800);
+  };
 
   // Disparar Notificação (Toast)
   const showToast = (title, desc, type = 'info') => {
@@ -1439,6 +1474,41 @@ function App() {
             </svg>
             CONECTAR COM A CONTA GOOGLE
           </button>
+
+          <div style={{ marginTop: '20px', textAlign: 'center' }}>
+            <button
+              type="button"
+              className="auth-link-btn"
+              onClick={() => setServerModalOpen(true)}
+              style={{ fontSize: '11px', opacity: 0.8 }}
+            >
+              ⚙️ Configurar Servidor da API (APK Mobile)
+            </button>
+          </div>
+        </div>
+
+        {/* Modal Servidor API (Mobile / APK) */}
+        <div className={`modal-overlay ${serverModalOpen ? 'active' : ''}`}>
+          <div className="modal-card">
+            <h2 className="modal-title">⚙️ ENDEREÇO DO SERVIDOR API</h2>
+            <p className="modal-desc">Configure o endereço do servidor backend quando estiver executando o app no Android Studio ou dispositivo físico.</p>
+            <form onSubmit={handleSaveServerUrl}>
+              <div className="form-group">
+                <label>URL DO SERVIDOR BACKEND</label>
+                <input
+                  type="text"
+                  placeholder="Ex: http://192.168.1.10:3000 ou https://meusistema.com"
+                  value={customServerInput}
+                  onChange={e => setCustomServerInput(e.target.value)}
+                />
+                <span className="field-desc">Emuladores usam http://10.0.2.2:3000 por padrão. Celulares físicos usam o IP da sua rede local. Deixe vazio para usar a URL padrão.</span>
+              </div>
+              <div className="form-buttons">
+                <button type="button" className="state-btn secondary" onClick={() => setServerModalOpen(false)}>CANCELAR</button>
+                <button type="submit" className="state-btn primary gold-glow">SALVAR E REINICIAR</button>
+              </div>
+            </form>
+          </div>
         </div>
 
         {/* Modal Nickname Google */}
@@ -2487,8 +2557,8 @@ function App() {
                         const barColor = score < 3501
                           ? 'linear-gradient(90deg, #8A3D2F, #C45A45)'
                           : score <= 8499
-                          ? 'linear-gradient(90deg, #4E6E8E, #7AAAD4)'
-                          : 'linear-gradient(90deg, #B08A47, #FFD700)';
+                            ? 'linear-gradient(90deg, #4E6E8E, #7AAAD4)'
+                            : 'linear-gradient(90deg, #B08A47, #FFD700)';
                         const tier = score < 3501 ? 'Vigilância' : score <= 8499 ? 'Regular' : 'Reluzente';
                         return (
                           <div key={c.id} className="cv-bar-row">
