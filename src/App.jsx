@@ -1102,7 +1102,7 @@ function App() {
       };
     } else {
       return {
-        title: 'Cidadão Ejemplar / Reluzente',
+        title: 'Cidadão Exemplar / Reluzente',
         logo: logoReluzindo,
         badgeColor: '#B08A47',
         textColor: '#FFD700',
