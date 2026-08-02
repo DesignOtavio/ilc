@@ -96,6 +96,11 @@ function App() {
   // Logs de auditoria do usuário comum
   const [citizenAuditLogs, setCitizenAuditLogs] = useState([]);
 
+  // Visão Cívica
+  const [civicOverview, setCivicOverview] = useState(null);
+  const [civicUserFilter, setCivicUserFilter] = useState('');
+  const [civicSelectedUsers, setCivicSelectedUsers] = useState([]);
+
   // Eventos da Democracia
   const [democracyEvents, setDemocracyEvents] = useState([]);
   const [newEventTitle, setNewEventTitle] = useState('');
@@ -374,6 +379,8 @@ function App() {
       fetchAdminAuditLogs();
     } else if (activeTab === 'adm-democracy-events') {
       fetchDemocracyEvents();
+    } else if (activeTab === 'civic-vision') {
+      fetchCivicOverview();
     }
   }, [activeTab, token, adminPage, adminSearch, adminFilterStatus, adminFilterTier]);
 
@@ -432,6 +439,23 @@ function App() {
       setCitizenAuditLogs(data);
     } catch (err) {
       showToast('Erro de Auditoria', err.message, 'warning');
+    }
+  };
+
+  const fetchCivicOverview = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/civic-overview`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await parseApiResponse(res);
+      if (!res.ok) throw new Error(data.error);
+      setCivicOverview(data);
+      // Inicializar todos os usuários selecionados na primeira carga
+      if (data.citizens && civicSelectedUsers.length === 0) {
+        setCivicSelectedUsers(data.citizens.map(c => c.id));
+      }
+    } catch (err) {
+      showToast('Erro na Visão Cívica', err.message, 'warning');
     }
   };
 
@@ -1306,6 +1330,7 @@ function App() {
             <button className={`nav-tab ${activeTab === 'cit-dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('cit-dashboard')}>MINHA CARTEIRA</button>
             <button className={`nav-tab ${activeTab === 'cit-audit' ? 'active' : ''}`} onClick={() => setActiveTab('cit-audit')}>LOGS DE AUDITORIA</button>
             <button className={`nav-tab ${activeTab === 'democracy-events' ? 'active' : ''}`} onClick={() => setActiveTab('democracy-events')}>EVENTOS DA DEMOCRACIA</button>
+            <button className={`nav-tab ${activeTab === 'civic-vision' ? 'active' : ''}`} onClick={() => setActiveTab('civic-vision')}>VISÃO CÍVICA</button>
           </div>
         ) : (
           <div className="nav-group active">
@@ -1315,6 +1340,7 @@ function App() {
             <button className={`nav-tab ${activeTab === 'adm-audit' ? 'active' : ''}`} onClick={() => { setDetailCitizenId(null); setActiveTab('adm-audit'); }}>LOGS DE AUDITORIA</button>
             <button className={`nav-tab ${activeTab === 'cit-dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('cit-dashboard')}>MINHA CARTEIRA</button>
             <button className={`nav-tab ${activeTab === 'adm-democracy-events' ? 'active' : ''}`} onClick={() => { setDetailCitizenId(null); setActiveTab('adm-democracy-events'); fetchDemocracyEvents(); }}>EVENTOS DA DEMOCRACIA</button>
+            <button className={`nav-tab ${activeTab === 'civic-vision' ? 'active' : ''}`} onClick={() => { setDetailCitizenId(null); setActiveTab('civic-vision'); }}>VISÃO CÍVICA</button>
           </div>
         )}
       </nav>
@@ -2182,6 +2208,245 @@ function App() {
                 </tbody>
               </table>
             </div>
+          </section>
+        )}
+
+        {/* ========================================== */}
+        {/* VISÃO CÍVICA */}
+        {/* ========================================== */}
+        {activeTab === 'civic-vision' && (
+          <section className="tab-pane active">
+            <div className="section-heading" style={{ marginBottom: '24px' }}>
+              <h2 className="section-title">VISÃO CÍVICA GERAL</h2>
+              <p className="section-subtitle">Panorama completo do Corpo Cívico — pontuações, movimentações e agenda da Democracia.</p>
+            </div>
+
+            {!civicOverview ? (
+              <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>Carregando visão cívica...</div>
+            ) : (
+              <>
+                {/* ===== RANKING DE PONTUAÇÃO ===== */}
+                <div className="bento-card" style={{ marginBottom: '20px' }}>
+                  <div className="card-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
+                    <div>
+                      <h3 className="card-title">RANKING DE PONTUAÇÃO ILC</h3>
+                      <p className="card-subtitle">Todos os cidadãos ativos ordenados por índice de lealdade.</p>
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <input
+                        type="text"
+                        placeholder="🔍 Filtrar cidadão..."
+                        value={civicUserFilter}
+                        onChange={e => setCivicUserFilter(e.target.value)}
+                        style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: '6px', padding: '8px 12px', fontSize: '13px', width: '200px' }}
+                      />
+                      <button
+                        className="sim-btn operator"
+                        style={{ fontSize: '11px' }}
+                        onClick={() => setCivicSelectedUsers(civicOverview.citizens.map(c => c.id))}
+                      >SELECIONAR TODOS</button>
+                      <button
+                        className="sim-btn citizen-low"
+                        style={{ fontSize: '11px' }}
+                        onClick={() => setCivicSelectedUsers([])}
+                      >LIMPAR</button>
+                      <button
+                        className="sim-btn admin"
+                        style={{ fontSize: '11px' }}
+                        onClick={fetchCivicOverview}
+                      >↻ ATUALIZAR</button>
+                    </div>
+                  </div>
+
+                  {/* Seletor de usuários */}
+                  <div className="cv-user-chips">
+                    {civicOverview.citizens
+                      .filter(c => c.username.toLowerCase().includes(civicUserFilter.toLowerCase()))
+                      .map(c => {
+                        const isSelected = civicSelectedUsers.includes(c.id);
+                        const score = Number(c.current_score);
+                        const chipColor = score < 3501 ? '#8A3D2F' : score <= 8499 ? '#4E6E8E' : '#B08A47';
+                        return (
+                          <button
+                            key={c.id}
+                            className={`cv-user-chip ${isSelected ? 'selected' : ''}`}
+                            style={{ '--chip-color': chipColor }}
+                            onClick={() => {
+                              setCivicSelectedUsers(prev =>
+                                prev.includes(c.id)
+                                  ? prev.filter(id => id !== c.id)
+                                  : [...prev, c.id]
+                              );
+                            }}
+                          >
+                            {c.avatar_url ? (
+                              <img src={c.avatar_url} alt={c.username} className="cv-chip-avatar" />
+                            ) : (
+                              <div className="cv-chip-avatar-fallback" style={{ background: chipColor }}>
+                                {c.username.charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            <span>@{c.username}</span>
+                            {isSelected && <span className="cv-chip-score">{c.current_score}</span>}
+                          </button>
+                        );
+                      })}
+                  </div>
+
+                  {/* Barras de ranking */}
+                  <div className="cv-ranking-bars">
+                    {civicOverview.citizens
+                      .filter(c => civicSelectedUsers.includes(c.id))
+                      .filter(c => c.username.toLowerCase().includes(civicUserFilter.toLowerCase()) || civicUserFilter === '')
+                      .map((c, idx) => {
+                        const score = Number(c.current_score);
+                        const pct = (score / 10000) * 100;
+                        const barColor = score < 3501
+                          ? 'linear-gradient(90deg, #8A3D2F, #C45A45)'
+                          : score <= 8499
+                          ? 'linear-gradient(90deg, #4E6E8E, #7AAAD4)'
+                          : 'linear-gradient(90deg, #B08A47, #FFD700)';
+                        const tier = score < 3501 ? 'Vigilância' : score <= 8499 ? 'Regular' : 'Reluzente';
+                        return (
+                          <div key={c.id} className="cv-bar-row">
+                            <div className="cv-bar-user">
+                              <span className="cv-bar-pos">#{idx + 1}</span>
+                              {c.avatar_url ? (
+                                <img src={c.avatar_url} alt={c.username} className="cv-bar-avatar" />
+                              ) : (
+                                <div className="cv-bar-avatar-fallback">
+                                  {c.username.charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                              <div className="cv-bar-info">
+                                <span className="cv-bar-name">@{c.username}</span>
+                                <span className="cv-bar-title">{c.hierarchy_title || 'Cidadão Cívico'}</span>
+                              </div>
+                            </div>
+                            <div className="cv-bar-track">
+                              <div
+                                className="cv-bar-fill"
+                                style={{ width: `${pct}%`, background: barColor }}
+                              />
+                            </div>
+                            <div className="cv-bar-score">
+                              <span className="cv-score-number">{score.toLocaleString('pt-BR')}</span>
+                              <span className="cv-score-tier">{tier}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    {civicOverview.citizens.filter(c => civicSelectedUsers.includes(c.id)).length === 0 && (
+                      <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px', fontSize: '13px' }}>
+                        Nenhum cidadão selecionado. Use os chips acima para selecionar.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* ===== LINHA INFERIOR: Últimos Eventos + Próximos Eventos ===== */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+
+                  {/* Últimos Eventos de Score */}
+                  <div className="bento-card">
+                    <div className="card-head">
+                      <h3 className="card-title">MOVIMENTAÇÕES RECENTES</h3>
+                      <p className="card-subtitle">Últimas atividades de pontuação do corpo cívico.</p>
+                    </div>
+                    <div className="cv-events-feed">
+                      {civicOverview.recent_events.length === 0 ? (
+                        <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px 0', fontSize: '13px' }}>Nenhuma movimentação registrada.</p>
+                      ) : civicOverview.recent_events.map(ev => {
+                        const isPositive = Number(ev.points_delta) > 0;
+                        return (
+                          <div key={ev.id} className="cv-feed-item">
+                            <div className="cv-feed-avatar">
+                              {ev.avatar_url ? (
+                                <img src={ev.avatar_url} alt={ev.username} />
+                              ) : (
+                                <div className="cv-feed-avatar-fallback">
+                                  {ev.username.charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                            <div className="cv-feed-info">
+                              <span className="cv-feed-user">@{ev.username}</span>
+                              <span className="cv-feed-type">{ev.type_name}</span>
+                              {ev.description && (
+                                <span className="cv-feed-desc">{ev.description.substring(0, 60)}{ev.description.length > 60 ? '...' : ''}</span>
+                              )}
+                            </div>
+                            <div className="cv-feed-right">
+                              <span className={`cv-feed-delta ${isPositive ? 'positive' : 'negative'}`}>
+                                {isPositive ? '+' : ''}{ev.points_delta}
+                              </span>
+                              <span className="cv-feed-date">
+                                {new Date(ev.occurred_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Próximos Eventos da Democracia */}
+                  <div className="bento-card">
+                    <div className="card-head">
+                      <h3 className="card-title">PRÓXIMOS EVENTOS</h3>
+                      <p className="card-subtitle">Agenda cívica — eventos abertos à participação.</p>
+                    </div>
+                    <div className="cv-upcoming-list">
+                      {civicOverview.upcoming_events.length === 0 ? (
+                        <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px 0', fontSize: '13px' }}>Nenhum evento agendado no momento.</p>
+                      ) : civicOverview.upcoming_events.map(ev => {
+                        const evDate = new Date(ev.event_date);
+                        const isPast = evDate < new Date();
+                        const catIcon = { 'cívico': '🏛️', 'cultural': '🎭', 'político': '⚖️', 'comunitário': '🤝', 'educacional': '📚', 'ambiental': '🌿' }[ev.category] || '📋';
+                        return (
+                          <div key={ev.id} className="cv-upcoming-card">
+                            <div className="cv-upcoming-date">
+                              <span className="cv-date-day">{evDate.getDate().toString().padStart(2, '0')}</span>
+                              <span className="cv-date-mon">{evDate.toLocaleDateString('pt-BR', { month: 'short' }).toUpperCase().replace('.', '')}</span>
+                            </div>
+                            <div className="cv-upcoming-info">
+                              <div className="cv-upcoming-header">
+                                <span className="cv-upcoming-cat">{catIcon} {ev.category.toUpperCase()}</span>
+                                <span className="cv-upcoming-count">👥 {ev.participant_count}</span>
+                              </div>
+                              <h4 className="cv-upcoming-title">{ev.title}</h4>
+                              {ev.location && <span className="cv-upcoming-loc">📍 {ev.location}</span>}
+                            </div>
+                            <div className="cv-upcoming-action">
+                              {!isPast && ev.status !== 'cancelado' && ev.status !== 'concluído' && (
+                                <button
+                                  className={`state-btn ${ev.is_registered ? 'warning' : 'success'}`}
+                                  style={{ fontSize: '11px', padding: '6px 12px', whiteSpace: 'nowrap' }}
+                                  onClick={async () => {
+                                    try {
+                                      const res = await fetch(`${API_BASE}/democracy-events/${ev.id}/register`, {
+                                        method: 'POST',
+                                        headers: { 'Authorization': `Bearer ${token}` }
+                                      });
+                                      const data = await res.json();
+                                      if (res.ok) { showToast('Inscrição', data.message, 'success'); fetchCivicOverview(); }
+                                      else showToast('Erro', data.error, 'warning');
+                                    } catch { showToast('Erro de rede', 'Tente novamente.', 'warning'); }
+                                  }}
+                                >
+                                  {ev.is_registered ? 'CANCELAR' : 'INSCREVER'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                </div>
+              </>
+            )}
           </section>
         )}
 
