@@ -4,6 +4,9 @@ import CertificatesGrid from './components/CertificatesGrid';
 import logoNorml from './imgs/lgo_norml.png';
 import logoQuebrada from './imgs/lgo_quebrada.png';
 import logoReluzindo from './imgs/lgo_reluzindo.png';
+import mdlNormal from './imgs/mdl_normal.png';
+import mdlQuebrada from './imgs/mdl_quebrada.png';
+import mdlReluzente from './imgs/mdl_reluzente.png';
 
 const logoImg = logoNorml;
 
@@ -406,9 +409,13 @@ function App() {
         setUserHierarchyTitle(data.profile.hierarchy_title);
         localStorage.setItem('ilc_hierarchy_title', data.profile.hierarchy_title);
       }
+
+      // BUGFIX: sempre sincronizar o avatar — inclusive quando for null (remoção de foto)
+      setUserAvatarUrl(data.profile.avatar_url || null);
       if (data.profile.avatar_url) {
-        setUserAvatarUrl(data.profile.avatar_url);
         localStorage.setItem('ilc_avatar_url', data.profile.avatar_url);
+      } else {
+        localStorage.removeItem('ilc_avatar_url');
       }
     } catch (err) {
       showToast('Falha de Dados', err.message, 'warning');
@@ -623,16 +630,26 @@ function App() {
       const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
 
-      setUsername(data.nickname);
-      setUserHierarchyTitle(data.hierarchy_title);
-      setUserAvatarUrl(data.avatar_url);
-      localStorage.setItem('ilc_username', data.nickname);
-      if (data.hierarchy_title) localStorage.setItem('ilc_hierarchy_title', data.hierarchy_title);
-      if (data.avatar_url) localStorage.setItem('ilc_avatar_url', data.avatar_url);
-      else localStorage.removeItem('ilc_avatar_url');
+      // BUGFIX: sempre sincronizar username, título e avatar — inclusive null
+      if (data.nickname) {
+        setUsername(data.nickname);
+        localStorage.setItem('ilc_username', data.nickname);
+      }
+      if (data.hierarchy_title) {
+        setUserHierarchyTitle(data.hierarchy_title);
+        localStorage.setItem('ilc_hierarchy_title', data.hierarchy_title);
+      }
+      // Avatar: atualizar estado e localStorage independente de ser null ou string
+      setUserAvatarUrl(data.avatar_url || null);
+      if (data.avatar_url) {
+        localStorage.setItem('ilc_avatar_url', data.avatar_url);
+      } else {
+        localStorage.removeItem('ilc_avatar_url');
+      }
 
       showToast('Carteira de Identidade Atualizada', data.message, 'success');
       setPhotoModalOpen(false);
+      // Re-fetch para garantir que citizenData.profile.avatar_url também fica atualizado
       fetchCitizenData();
     } catch (err) {
       showToast('Erro ao Atualizar', err.message, 'warning');
@@ -700,14 +717,16 @@ function App() {
         let quality = 0.82;
         let compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
 
-        while (compressedDataUrl.length > 200 * 1024 && quality > 0.3) {
-          quality -= 0.15;
+        // Comprimir até ~500KB de string base64 (equivale a ~375KB de imagem real),
+        // bem abaixo do limite de 2.8MB do servidor
+        while (compressedDataUrl.length > 500 * 1024 && quality > 0.25) {
+          quality -= 0.1;
           compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
         }
 
         const sizeInKB = Math.round((compressedDataUrl.length * 3 / 4) / 1024);
         setInputAvatarUrl(compressedDataUrl);
-        showToast('Compressão Concluída', `Sua foto foi comprimida para ${sizeInKB} KB e está pronta para salvar.`, 'success');
+        showToast('Compressão Concluída', `Sua foto foi comprimida para ~${sizeInKB} KB e está pronta para salvar.`, 'success');
       };
       img.onerror = () => {
         showToast('Erro de Imagem', 'Não foi possível processar a imagem.', 'warning');
@@ -1087,26 +1106,26 @@ function App() {
     if (s < 3501) {
       return {
         title: 'Cidadão Sob Vigilância / Baixa Lealdade',
-        logo: logoQuebrada,
+        logo: mdlQuebrada,
         badgeColor: '#8A3D2F',
         textColor: '#FF6B6B',
-        desc: 'Pontuação abaixo de 3501 pts — Nível crítico de lealdade.'
+        desc: 'Pontuação entre 0 e 3500 pts — Nível crítico de lealdade.'
       };
     } else if (s <= 8499) {
       return {
         title: 'Cidadão Regular / Padrão',
-        logo: logoNorml,
+        logo: mdlNormal,
         badgeColor: '#4E6E8E',
         textColor: '#B9B19A',
-        desc: 'Pontuação entre 3501 e 8499 pts — Conduta cívica estabilizada.'
+        desc: 'Pontuação entre 3500 e 8500 pts — Conduta cívica estabilizada.'
       };
     } else {
       return {
         title: 'Cidadão Exemplar / Reluzente',
-        logo: logoReluzindo,
+        logo: mdlReluzente,
         badgeColor: '#B08A47',
         textColor: '#FFD700',
-        desc: 'Pontuação acima de 8499 pts — Alto grau de lealdade e honra.'
+        desc: 'Pontuação acima de 8500 pts — Alto grau de lealdade e honra.'
       };
     }
   };

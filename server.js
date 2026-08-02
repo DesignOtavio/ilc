@@ -791,12 +791,17 @@ app.put('/api/citizen/update-profile', authenticateToken, async (req, res) => {
     } else if (typeof avatar_url !== 'string') {
       return res.status(400).json({ error: 'URL de avatar inválida.' });
     } else if (avatar_url.startsWith('data:')) {
-      // Apenas data URIs de imagem são permitidos
-      const validDataUriPattern = /^data:image\/(jpeg|jpg|png|gif|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/;
-      if (!validDataUriPattern.test(avatar_url)) {
+      // Validar prefixo MIME sem regex full-string (evita backtracking catastrófico em base64 grandes)
+      const validMimePrefix = /^data:image\/(jpeg|jpg|png|gif|webp|svg\+xml);base64,/;
+      if (!validMimePrefix.test(avatar_url)) {
         return res.status(400).json({ error: 'Somente imagens em formato JPEG, PNG, GIF, WebP ou SVG são permitidas.' });
       }
-      // Limitar tamanho do Base64 (~2MB de imagem após encode)
+      // Verificar caracteres base64 apenas nos primeiros 100 chars após o prefixo
+      const base64Part = avatar_url.split(',')[1] || '';
+      if (base64Part.length === 0 || !/^[A-Za-z0-9+/=]{1,100}/.test(base64Part)) {
+        return res.status(400).json({ error: 'Dados da imagem inválidos.' });
+      }
+      // Limitar tamanho (~2MB de imagem após encode → ~2.8MB em base64)
       if (avatar_url.length > 2.8 * 1024 * 1024) {
         return res.status(400).json({ error: 'Imagem muito grande. O limite é 2MB.' });
       }
@@ -1815,6 +1820,80 @@ app.post('/api/democracy-events/:id/send-webhook', authenticateToken, async (req
     }
   } catch (err) {
     res.status(500).json({ error: 'Erro ao enviar notificação WhatsApp: ' + err.message });
+  }
+});
+
+// ==========================================
+// ROTA PÚBLICA VISÃO CÍVICA (todos os usuários)
+// ==========================================
+
+app.get('/api/civic-overview', authenticateToken, async (req, res) => {
+  try {
+    // Todos os cidadãos com score (sem dados sensíveis)
+    const citizensRes = await pool.query(`
+      SELECT
+        u.id,
+        u.username,
+        u.avatar_url,
+        u.hierarchy_title,
+        u.status,
+        COALESCE(sa.current_score, 5000) as current_score
+      FROM users u
+      LEFT JOIN score_accounts sa ON sa.user_id = u.id
+      WHERE u.status = 'active'
+      ORDER BY COALESCE(sa.current_score, 5000) DESC
+    `);
+
+    // Últimos 20 eventos aprovados do sistema
+    const recentEventsRes = await pool.query(`
+      SELECT
+        se.id,
+        se.points_delta,
+        se.description,
+        se.occurred_at,
+        se.status,
+        sety.name as type_name,
+        sety.category,
+        u.username,
+        u.avatar_url,
+        u.hierarchy_title
+      FROM score_events se
+      JOIN score_event_types sety ON se.event_type_id = sety.id
+      JOIN users u ON se.user_id = u.id
+      WHERE se.status = 'approved'
+      ORDER BY se.occurred_at DESC
+      LIMIT 20
+    `);
+
+    // Próximos eventos da democracia (data >= hoje)
+    const upcomingEventsRes = await pool.query(`
+      SELECT
+        de.id,
+        de.title,
+        de.description,
+        de.location,
+        de.event_date,
+        de.category,
+        de.status,
+        de.max_participants,
+        de.registration_url,
+        u.username as creator_name,
+        (SELECT COUNT(*) FROM democracy_event_participants dep WHERE dep.event_id = de.id) as participant_count,
+        EXISTS(SELECT 1 FROM democracy_event_participants dep WHERE dep.event_id = de.id AND dep.user_id = $1) as is_registered
+      FROM democracy_events de
+      LEFT JOIN users u ON de.created_by = u.id
+      WHERE de.event_date >= NOW() AND de.status != 'cancelado'
+      ORDER BY de.event_date ASC
+      LIMIT 10
+    `, [req.user.id]);
+
+    res.json({
+      citizens: citizensRes.rows,
+      recent_events: recentEventsRes.rows,
+      upcoming_events: upcomingEventsRes.rows
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao carregar Visão Cívica: ' + err.message });
   }
 });
 
