@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import ScoreChart from './components/ScoreChart';
 import CertificatesGrid from './components/CertificatesGrid';
+import logoNorml from './imgs/lgo_norml.png';
+import logoQuebrada from './imgs/lgo_quebrada.png';
+import logoReluzindo from './imgs/lgo_reluzindo.png';
+
+const logoImg = logoNorml;
 
 const API_BASE = '/api';
 
@@ -153,7 +158,7 @@ function App() {
       try {
         const parsed = JSON.parse(text);
         if (parsed.error) msg = parsed.error;
-      } catch (_) {}
+      } catch (_) { }
       forceLogout(msg);
       return { error: msg };
     }
@@ -1077,13 +1082,40 @@ function App() {
     showToast('Sessão Encerrada', 'Retirada segura dos canais cívicos.', 'info');
   };
 
+  const getRankingDetails = (score) => {
+    const s = Number(score) || 0;
+    if (s < 3501) {
+      return {
+        title: 'Cidadão Sob Vigilância / Baixa Lealdade',
+        logo: logoQuebrada,
+        badgeColor: '#8A3D2F',
+        textColor: '#FF6B6B',
+        desc: 'Pontuação abaixo de 3501 pts — Nível crítico de lealdade.'
+      };
+    } else if (s <= 8499) {
+      return {
+        title: 'Cidadão Regular / Padrão',
+        logo: logoNorml,
+        badgeColor: '#4E6E8E',
+        textColor: '#B9B19A',
+        desc: 'Pontuação entre 3501 e 8499 pts — Conduta cívica estabilizada.'
+      };
+    } else {
+      return {
+        title: 'Cidadão Ejemplar / Reluzente',
+        logo: logoReluzindo,
+        badgeColor: '#B08A47',
+        textColor: '#FFD700',
+        desc: 'Pontuação acima de 8499 pts — Alto grau de lealdade e honra.'
+      };
+    }
+  };
+
   const getTierDetails = (score) => {
-    if (score < 2000) return { name: 'Vigilância Máxima', color: '#8A3D2F' };
-    if (score < 4000) return { name: 'Restrito', color: '#4E6E8E' };
-    if (score < 6000) return { name: 'Cidadão Comum', color: '#B9B19A' };
-    if (score < 8000) return { name: 'Cidadão Exemplar', color: '#556B2F' };
-    if (score < 9500) return { name: 'Herói Cívico', color: '#73B33A' };
-    return { name: 'Alto Comando Honorário', color: '#B08A47' };
+    const s = Number(score) || 0;
+    if (s < 3501) return { name: 'Vigilância Máxima', color: '#8A3D2F' };
+    if (s <= 8499) return { name: 'Cidadão Comum', color: '#4E6E8E' };
+    return { name: 'Alto Comando / Reluzente', color: '#B08A47' };
   };
 
   const getCategoryIcon = (cat) => {
@@ -1123,14 +1155,7 @@ function App() {
 
         <div className="auth-card">
           <div className="state-seal-wrapper">
-            <svg className="state-seal" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="45" stroke="#B08A47" strokeWidth="2" fill="none" strokeDasharray="3,3" />
-              <circle cx="50" cy="50" r="40" stroke="#5C4B2A" strokeWidth="1" fill="none" />
-              <path d="M50,15 L53,28 L66,28 L56,36 L59,49 L50,41 L41,49 L44,36 L34,28 L47,28 Z" fill="#B08A47" />
-              <path d="M25,65 Q20,50 25,35 Q30,50 25,65 Z" fill="#556B2F" opacity="0.6" />
-              <path d="M75,65 Q80,50 75,35 Q70,50 75,65 Z" fill="#556B2F" opacity="0.6" />
-              <text x="50" y="70" textAnchor="middle" fontFamily="Bebas Neue" fontSize="12" fill="#D4C08A" letterSpacing="1">ILC</text>
-            </svg>
+            <img src={logoImg} alt="Logo ILC" className="state-seal" />
           </div>
 
           <h1 className="state-title">PORTAL DE ACESSO CÍVICO</h1>
@@ -1233,14 +1258,9 @@ function App() {
       {/* Cabeçalho oficial */}
       <header className="main-header">
         <div className="header-identity">
-          <svg className="header-logo" viewBox="0 0 100 100">
-            <circle cx="50" cy="50" r="45" stroke="#B08A47" strokeWidth="2" fill="none" />
-            <path d="M50,20 L53,33 L66,33 L56,41 L59,54 L50,46 L41,54 L44,41 L34,33 L47,33 Z" fill="#B08A47" />
-            <path d="M25,65 Q20,50 25,35" stroke="#556B2F" strokeWidth="2" fill="none" />
-            <path d="M75,65 Q80,50 75,35" stroke="#556B2F" strokeWidth="2" fill="none" />
-          </svg>
+          <img src={logoImg} alt="Logo ILC" className="header-logo" />
           <div className="header-titles">
-            <h1>REPÚBLICA CÍVICA NACIONAL</h1>
+            <h1>ESTADO SOBERANO DA DEMOCRACIA GERENCIADA</h1>
             <h2>SISTEMA OFICIAL DE LEALDADE (ILC)</h2>
           </div>
         </div>
@@ -1282,19 +1302,19 @@ function App() {
 
       {/* Conteúdo Principal */}
       <main className="main-content">
-        
+
         {/* ========================================== */}
         {/* CARTEIRA DE IDENTIDADE CÍVICA (USER/ADMIN) */}
         {/* ========================================== */}
         {activeTab === 'cit-dashboard' && citizenData && (
           <section className="tab-pane active">
             <div className="bento-grid">
-              
+
               {/* CARTÃO DE IDENTIDADE CÍVICA OFICIAL */}
               <div className="bento-card col-5 credential-card-wrapper">
                 <div className="credential-card gold-border">
                   <div className="card-bg-pattern"></div>
-                  
+
                   <div className="card-header">
                     <span className="card-estatal-text">CARTEIRA DE IDENTIDADE CÍVICA</span>
                     <span className="card-serial">REG: {citizenData.profile.id.substring(0, 8).toUpperCase()}</span>
@@ -1309,7 +1329,7 @@ function App() {
                         ) : (
                           <div className="cit-avatar-placeholder">
                             <svg viewBox="0 0 24 24" width="48" height="48" fill="#B08A47">
-                              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
                             </svg>
                           </div>
                         )}
@@ -1324,7 +1344,7 @@ function App() {
                         <span className="label">COGNOME</span>
                         <span className="value">@{citizenData.profile.username}</span>
                       </div>
-                      
+
                       <div className="detail-row">
                         <span className="label">TÍTULO DE HIERARQUIA</span>
                         <span className="value hierarchy-title-badge">{activeHierarchyTitle}</span>
@@ -1349,23 +1369,24 @@ function App() {
                     </div>
                   </div>
 
-                  {/* EMBLEMA DE PATENTE CÍVICA */}
-                  {citizenData.profile.rank_title && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 0', borderTop: '1px solid var(--border-light)', marginTop: '8px' }}>
-                      <div className="rank-emblem-box">
-                        {citizenData.profile.rank_emblem_url ? (
-                          <img src={citizenData.profile.rank_emblem_url} alt="Emblema" className="rank-emblem-img" />
-                        ) : (
-                          <span style={{ fontSize: '32px' }}>🎖️</span>
-                        )}
-                        <span style={{ fontSize: '9px', color: 'var(--gold)', fontFamily: 'var(--font-ui)', fontWeight: 700, letterSpacing: '0.5px', marginTop: '4px', textAlign: 'center' }}>PATENTE</span>
+                  {/* RANKING CÍVICO COM BASE NO SCORE */}
+                  {(() => {
+                    const rank = getRankingDetails(citizenData.profile.current_score);
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 0', borderTop: '1px solid var(--border-light)', marginTop: '8px' }}>
+                        <div className="rank-emblem-box">
+                          <img src={rank.logo} alt="Insígnia de Ranking" className="rank-emblem-img" />
+                          <span style={{ fontSize: '9px', color: 'var(--gold)', fontFamily: 'var(--font-ui)', fontWeight: 700, letterSpacing: '0.5px', marginTop: '4px', textAlign: 'center' }}>RANKING</span>
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-ui)', letterSpacing: '1px' }}>CLASSIFICAÇÃO DO CIDADÃO</div>
+                          <div className="rank-title-badge" style={{ marginTop: '4px', borderColor: rank.badgeColor, color: rank.textColor }}>
+                            {rank.title}
+                          </div>
+                        </div>
                       </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-ui)', letterSpacing: '1px' }}>PATENTE CÍVICA</div>
-                        <div className="rank-title-badge" style={{ marginTop: '4px' }}>🎖️ {citizenData.profile.rank_title}</div>
-                      </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   <div className="card-footer">
                     <div className="score-display">
@@ -1377,38 +1398,71 @@ function App() {
                 </div>
               </div>
 
-              {/* EVOLUÇÃO DE FAIXA */}
+              {/* EVOLUÇÃO DE FAIXA / RANKING */}
               <div className="bento-card col-4 flex-col justify-between">
                 <div className="card-head">
                   <h3 className="card-title">EVOLUÇÃO DA CLASSIFICAÇÃO</h3>
-                  <p className="card-subtitle">Sua progressão linear no Índice de Lealdade.</p>
+                  <p className="card-subtitle">Sua progressão no Índice de Lealdade Cívica.</p>
                 </div>
 
-                <div className="progress-section">
-                  <div className="progress-labels">
-                    <span>{citizenData.tier ? citizenData.tier.name : 'Atual'}</span>
-                    <span>{citizenData.next_tier ? citizenData.next_tier.name : 'Nível Máximo'}</span>
-                  </div>
-                  <div className="progress-bar-track">
-                    <div 
-                      className="progress-bar-fill" 
-                      style={{ 
-                        width: citizenData.next_tier && citizenData.tier
-                          ? `${((citizenData.profile.current_score - citizenData.tier.min_score) / (citizenData.next_tier.min_score - citizenData.tier.min_score)) * 100}%` 
-                          : '100%' 
-                      }}
-                    ></div>
-                  </div>
-                  <p className="progress-help">
-                    {citizenData.next_tier 
-                      ? `Faltam ${(citizenData.next_tier.min_score - citizenData.profile.current_score)} pontos para a próxima faixa.` 
-                      : 'Você atingiu o teto da confiança nacional.'}
-                  </p>
-                </div>
+                {(() => {
+                  const s = Number(citizenData.profile ? citizenData.profile.current_score : 0);
+                  let minS = 0;
+                  let maxS = 10000;
+                  let currentRankLabel = 'Sob Vigilância';
+                  let nextRankLabel = 'Cidadão Regular';
+                  let helpText = '';
+                  let pct = 0;
+
+                  if (s < 3501) {
+                    minS = 0;
+                    maxS = 3500;
+                    currentRankLabel = 'Sob Vigilância (<3501)';
+                    nextRankLabel = 'Cidadão Regular (3501)';
+                    pct = Math.min(100, Math.max(0, (s / 3500) * 100));
+                    helpText = `Faltam ${3501 - s} pontos para sair do estado de vigilância crítica.`;
+                  } else if (s <= 8499) {
+                    minS = 3501;
+                    maxS = 8499;
+                    currentRankLabel = 'Cidadão Regular (3501)';
+                    nextRankLabel = 'Cidadão Reluzente (8500)';
+                    pct = Math.min(100, Math.max(0, ((s - 3501) / (8499 - 3501)) * 100));
+                    helpText = `Faltam ${8500 - s} pontos para atingir o Nível Reluzente!`;
+                  } else {
+                    minS = 8500;
+                    maxS = 10000;
+                    currentRankLabel = 'Cidadão Reluzente (8500+)';
+                    nextRankLabel = 'Nível Máximo (10000)';
+                    pct = Math.min(100, Math.max(0, ((s - 8500) / (10000 - 8500)) * 100));
+                    helpText = 'Você atingiu a graduação máxima de lealdade e honra estatal.';
+                  }
+
+                  return (
+                    <div className="progress-section">
+                      <div className="progress-labels">
+                        <span>{currentRankLabel}</span>
+                        <span>{nextRankLabel}</span>
+                      </div>
+                      <div className="progress-bar-track">
+                        <div
+                          className="progress-bar-fill"
+                          style={{ width: `${pct}%` }}
+                        ></div>
+                      </div>
+                      <p className="progress-help">{helpText}</p>
+                    </div>
+                  );
+                })()}
 
                 <div className="tier-info-panel">
                   <h4 className="tier-info-title text-gold">RESTRIÇÕES / PRIVILÉGIOS ATUAIS:</h4>
-                  <p className="tier-info-desc">{citizenData.tier ? citizenData.tier.privileges : 'Direitos padrão de cidadania.'}</p>
+                  <p className="tier-info-desc">
+                    {citizenData.profile.current_score < 3501
+                      ? '⚠️ Restrição cívica: Acesso limitado e monitoramento contínuo pelo Estado.'
+                      : citizenData.profile.current_score <= 8499
+                        ? '✅ Privilégios regulares: Acesso livre aos serviços cívicos e eventos.'
+                        : '🌟 Condecoração Reluzente: Acesso prioritário, imunidades e honrarias de alto comando.'}
+                  </p>
                 </div>
               </div>
 
@@ -1831,11 +1885,11 @@ function App() {
             {/* Filtros */}
             <div className="filters-row">
               <div className="filter-group search">
-                <input 
-                  type="text" 
-                  placeholder="Pesquisar por nome, e-mail, celular ou título..." 
-                  value={adminSearch} 
-                  onChange={e => { setAdminSearch(e.target.value); setAdminPage(1); }} 
+                <input
+                  type="text"
+                  placeholder="Pesquisar por nome, e-mail, celular ou título..."
+                  value={adminSearch}
+                  onChange={e => { setAdminSearch(e.target.value); setAdminPage(1); }}
                 />
               </div>
               <div className="filter-group">
@@ -1928,8 +1982,8 @@ function App() {
             {adminTotalCitizens > adminLimit && (
               <div className="pagination">
                 {Array.from({ length: Math.ceil(adminTotalCitizens / adminLimit) }).map((_, idx) => (
-                  <button 
-                    key={idx} 
+                  <button
+                    key={idx}
                     className={`page-btn ${adminPage === idx + 1 ? 'active' : ''}`}
                     onClick={() => setAdminPage(idx + 1)}
                   >
@@ -2263,7 +2317,7 @@ function App() {
         <div className="modal-card">
           <h2 className="modal-title">👥 INSCRITOS NO EVENTO</h2>
           <p className="modal-desc">Cidadãos com inscrição confirmada em <strong>{selectedEventTitle}</strong>.</p>
-          
+
           <div style={{ maxHeight: '350px', overflowY: 'auto', marginBottom: '20px' }}>
             {selectedEventParticipants.length === 0 ? (
               <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px 0' }}>Nenhum cidadão inscrito até o momento.</p>

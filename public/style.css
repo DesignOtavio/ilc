@@ -159,6 +159,7 @@ body {
 .state-seal {
   width: 90px;
   height: 90px;
+  object-fit: contain;
   filter: drop-shadow(0 4px 10px rgba(0,0,0,0.4));
 }
 
@@ -445,6 +446,7 @@ textarea:focus {
 .header-logo {
   width: 48px;
   height: 48px;
+  object-fit: contain;
 }
 
 .header-titles h1 {
