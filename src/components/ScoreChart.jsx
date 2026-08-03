@@ -1,5 +1,17 @@
 import React, { useEffect, useRef } from 'react';
 
+const parseTime = (dateVal) => {
+  if (!dateVal) return 0;
+  if (typeof dateVal === 'number') return dateVal;
+  if (typeof dateVal === 'string') {
+    const isoLike = dateVal.trim().replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:?\d{2}?)*/, '$1T$2');
+    const dt = new Date(isoLike);
+    if (!isNaN(dt.getTime())) return dt.getTime();
+  }
+  const fallback = new Date(dateVal);
+  return isNaN(fallback.getTime()) ? 0 : fallback.getTime();
+};
+
 const ScoreChart = ({ history = [], currentScore = 5000 }) => {
   const canvasRef = useRef(null);
 
@@ -30,7 +42,7 @@ const ScoreChart = ({ history = [], currentScore = 5000 }) => {
     // Filtrar eventos aprovados e ordenar cronologicamente (do mais antigo para o mais recente)
     const approvedEvents = (history || [])
       .filter(ev => ev.status === 'approved' || !ev.status)
-      .sort((a, b) => new Date(a.occurred_at || a.created_at || 0) - new Date(b.occurred_at || b.created_at || 0));
+      .sort((a, b) => parseTime(a.occurred_at || a.created_at) - parseTime(b.occurred_at || b.created_at));
 
     let points = [];
     const targetEndScore = typeof currentScore === 'number' ? currentScore : 5000;

@@ -8,23 +8,74 @@ import mdlNormal from './imgs/mdl_normal.webp';
 import mdlQuebrada from './imgs/mdl_quebrada.webp';
 import mdlReluzente from './imgs/mdl_reluzente.webp';
 const logoImg = logoNorml;
+
+// Invólucro seguro para localStorage (evita SecurityError no iOS Safari Private Browsing)
+const memoryStorage = {};
+const safeStorage = {
+  getItem: (key) => {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        return localStorage.getItem(key);
+      }
+    } catch (_) { }
+    return memoryStorage[key] || null;
+  },
+  setItem: (key, val) => {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(key, val);
+      }
+    } catch (_) { }
+    memoryStorage[key] = val;
+  },
+  removeItem: (key) => {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(key);
+      }
+    } catch (_) { }
+    delete memoryStorage[key];
+  },
+  clear: () => {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.clear();
+      }
+    } catch (_) { }
+    Object.keys(memoryStorage).forEach(k => delete memoryStorage[k]);
+  }
+};
+
+// Conversor universal de datas (substitui espaço por T para compatibilidade WebKit / iOS Safari)
+export const parseSafeDate = (dateVal) => {
+  if (!dateVal) return null;
+  if (dateVal instanceof Date) return isNaN(dateVal.getTime()) ? null : dateVal;
+  if (typeof dateVal === 'number') return new Date(dateVal);
+  if (typeof dateVal === 'string') {
+    const trimmed = dateVal.trim();
+    const isoLike = trimmed.replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:?\d{2}?)*/, '$1T$2');
+    const dt = new Date(isoLike);
+    if (!isNaN(dt.getTime())) return dt;
+    const fallback = new Date(trimmed);
+    return isNaN(fallback.getTime()) ? null : fallback;
+  }
+  return null;
+};
+
 const getApiBase = () => {
   try {
     if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_BASE_URL) {
       return import.meta.env.VITE_API_BASE_URL.replace(/\/$/, '') + '/api';
     }
-    if (typeof localStorage !== 'undefined') {
-      const custom = localStorage.getItem('ilc_server_url');
-      if (custom) {
-        return custom.replace(/\/$/, '') + '/api';
-      }
+    const custom = safeStorage.getItem('ilc_server_url');
+    if (custom) {
+      return custom.replace(/\/$/, '') + '/api';
     }
-    const isNative = typeof window !== 'undefined' && (
-      window.Capacitor ||
-      (window.location && (window.location.protocol === 'capacitor:' || window.location.protocol === 'file:'))
-    );
-    if (isNative) {
-      return 'http://10.0.2.2:3000/api';
+    if (typeof window !== 'undefined' && window.location && window.location.origin) {
+      const proto = window.location.protocol;
+      if (proto === 'http:' || proto === 'https:') {
+        return window.location.origin.replace(/\/$/, '') + '/api';
+      }
     }
   } catch (err) {
     console.warn('API base resolution fallback:', err);
@@ -40,6 +91,11 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = 15000) => {
   try {
     const response = await fetch(url, {
       ...options,
+      headers: {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        ...(options.headers || {})
+      },
       signal: controller.signal
     });
     clearTimeout(id);
@@ -58,11 +114,11 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = 15000) => {
 
 function App() {
   // Estado de Autenticação
-  const [token, setToken] = useState(localStorage.getItem('ilc_token') || null);
-  const [userRole, setUserRole] = useState(localStorage.getItem('ilc_role') || null);
-  const [username, setUsername] = useState(localStorage.getItem('ilc_username') || null);
-  const [userHierarchyTitle, setUserHierarchyTitle] = useState(localStorage.getItem('ilc_hierarchy_title') || null);
-  const [userAvatarUrl, setUserAvatarUrl] = useState(localStorage.getItem('ilc_avatar_url') || null);
+  const [token, setToken] = useState(safeStorage.getItem('ilc_token') || null);
+  const [userRole, setUserRole] = useState(safeStorage.getItem('ilc_role') || null);
+  const [username, setUsername] = useState(safeStorage.getItem('ilc_username') || null);
+  const [userHierarchyTitle, setUserHierarchyTitle] = useState(safeStorage.getItem('ilc_hierarchy_title') || null);
+  const [userAvatarUrl, setUserAvatarUrl] = useState(safeStorage.getItem('ilc_avatar_url') || null);
 
   // Controle de Abas
   const [activeTab, setActiveTab] = useState('');
@@ -187,16 +243,20 @@ function App() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
 
+  // Estado de Carregamento da Carteira
+  const [citizenLoading, setCitizenLoading] = useState(false);
+  const [citizenError, setCitizenError] = useState(null);
+
   // Configuração de Servidor API (APK / Mobile)
   const [serverModalOpen, setServerModalOpen] = useState(false);
-  const [customServerInput, setCustomServerInput] = useState(localStorage.getItem('ilc_server_url') || '');
+  const [customServerInput, setCustomServerInput] = useState(safeStorage.getItem('ilc_server_url') || '');
 
   const handleSaveServerUrl = (e) => {
     e.preventDefault();
     if (!customServerInput.trim()) {
-      localStorage.removeItem('ilc_server_url');
+      safeStorage.removeItem('ilc_server_url');
     } else {
-      localStorage.setItem('ilc_server_url', customServerInput.trim());
+      safeStorage.setItem('ilc_server_url', customServerInput.trim());
     }
     setServerModalOpen(false);
     showToast('Servidor Configurado', 'Endereço da API atualizado. Reiniciando conexões...', 'success');
@@ -224,7 +284,7 @@ function App() {
     setCitizenData(null);
     setAdminMetrics(null);
     setDetailCitizenId(null);
-    localStorage.clear();
+    safeStorage.clear();
     showToast('🔒 Sessão Encerrada', reason, 'warning');
   };
 
@@ -255,8 +315,8 @@ function App() {
   // FORMATADORES COMPREENSÍVEIS DE AUDITORIA
   const formatAuditDate = (dateStr) => {
     if (!dateStr) return '—';
-    const dt = new Date(dateStr);
-    if (isNaN(dt.getTime())) return dateStr;
+    const dt = parseSafeDate(dateStr);
+    if (!dt) return String(dateStr);
     return dt.toLocaleDateString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
@@ -471,6 +531,8 @@ function App() {
 
   // REQUISIÇÕES DE API: USUÁRIO
   const fetchCitizenData = async () => {
+    setCitizenLoading(true);
+    setCitizenError(null);
     try {
       const res = await fetchWithTimeout(`${API_BASE}/citizen/me`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -484,18 +546,22 @@ function App() {
 
       if (data.profile.hierarchy_title) {
         setUserHierarchyTitle(data.profile.hierarchy_title);
-        localStorage.setItem('ilc_hierarchy_title', data.profile.hierarchy_title);
+        safeStorage.setItem('ilc_hierarchy_title', data.profile.hierarchy_title);
       }
 
       // BUGFIX: sempre sincronizar o avatar — inclusive quando for null (remoção de foto)
       setUserAvatarUrl(data.profile.avatar_url || null);
       if (data.profile.avatar_url) {
-        localStorage.setItem('ilc_avatar_url', data.profile.avatar_url);
+        safeStorage.setItem('ilc_avatar_url', data.profile.avatar_url);
       } else {
-        localStorage.removeItem('ilc_avatar_url');
+        safeStorage.removeItem('ilc_avatar_url');
       }
     } catch (err) {
-      showToast('Falha de Dados', err.message || 'Não foi possível carregar os dados do cidadão.', 'warning');
+      const msg = err.message || 'Não foi possível carregar os dados do cidadão.';
+      setCitizenError(msg);
+      showToast('Falha de Dados', msg, 'warning');
+    } finally {
+      setCitizenLoading(false);
     }
   };
 
@@ -1647,6 +1713,31 @@ function App() {
         {/* ========================================== */}
         {/* CARTEIRA DE IDENTIDADE CÍVICA (USER/ADMIN) */}
         {/* ========================================== */}
+        {activeTab === 'cit-dashboard' && citizenLoading && !citizenData && (
+          <section className="tab-pane active" style={{ padding: '60px 20px', textAlign: 'center' }}>
+            <div className="bento-card" style={{ maxWidth: '450px', margin: '0 auto', padding: '40px 20px' }}>
+              <div style={{ fontSize: '36px', marginBottom: '12px' }}>⏳</div>
+              <h3 style={{ color: 'var(--gold)', marginBottom: '8px', fontFamily: 'var(--font-heading)' }}>SINCRONIZANDO CARTEIRA CÍVICA...</h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Aguarde enquanto os registros do cidadão são homologados pelo sistema.</p>
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'cit-dashboard' && !citizenData && !citizenLoading && (
+          <section className="tab-pane active" style={{ padding: '60px 20px', textAlign: 'center' }}>
+            <div className="bento-card gold-border" style={{ maxWidth: '500px', margin: '0 auto', padding: '30px' }}>
+              <div style={{ fontSize: '42px', marginBottom: '12px' }}>⚠️</div>
+              <h3 style={{ color: '#E26D5C', marginBottom: '10px', fontFamily: 'var(--font-heading)' }}>FALHA DE COMUNICAÇÃO CÍVICA</h3>
+              <p style={{ color: 'var(--text-main)', fontSize: '14px', marginBottom: '20px' }}>
+                {citizenError || 'Não foi possível carregar os dados da carteira.'}
+              </p>
+              <button className="state-btn primary gold-glow" onClick={() => fetchCitizenData()}>
+                🔄 Tentar Novamente
+              </button>
+            </div>
+          </section>
+        )}
+
         {activeTab === 'cit-dashboard' && citizenData && (
           <section className="tab-pane active">
             <div className="bento-grid">

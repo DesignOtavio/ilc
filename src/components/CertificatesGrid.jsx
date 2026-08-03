@@ -1,5 +1,16 @@
 import React from 'react';
 
+const parseSafeCertDate = (dateVal) => {
+  if (!dateVal) return new Date().toLocaleDateString('pt-BR');
+  if (typeof dateVal === 'string') {
+    const isoLike = dateVal.trim().replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:?\d{2}?)*/, '$1T$2');
+    const dt = new Date(isoLike);
+    if (!isNaN(dt.getTime())) return dt.toLocaleDateString('pt-BR');
+  }
+  const dt = new Date(dateVal);
+  return isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('pt-BR');
+};
+
 const CertificatesGrid = ({ certificates = [] }) => {
   const officialDecorations = [
     {
@@ -55,7 +66,7 @@ const CertificatesGrid = ({ certificates = [] }) => {
         );
         const isUnlocked = !!userCert;
         const dateString = isUnlocked 
-          ? new Date(userCert.granted_at || Date.now()).toLocaleDateString('pt-BR') 
+          ? parseSafeCertDate(userCert.granted_at)
           : null;
         
         return (
