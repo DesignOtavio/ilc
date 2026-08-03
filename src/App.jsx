@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import ScoreChart from './components/ScoreChart';
 import CertificatesGrid from './components/CertificatesGrid';
-import logoNorml from './imgs/lgo_norml.png';
-import logoQuebrada from './imgs/lgo_quebrada.png';
-import logoReluzindo from './imgs/lgo_reluzindo.png';
-import mdlNormal from './imgs/mdl_normal.png';
-import mdlQuebrada from './imgs/mdl_quebrada.png';
-import mdlReluzente from './imgs/mdl_reluzente.png';
+import logoNorml from './imgs/lgo_norml.webp';
+import logoQuebrada from './imgs/lgo_quebrada.webp';
+import logoReluzindo from './imgs/lgo_reluzindo.webp';
+import mdlNormal from './imgs/mdl_normal.webp';
+import mdlQuebrada from './imgs/mdl_quebrada.webp';
+import mdlReluzente from './imgs/mdl_reluzente.webp';
 const logoImg = logoNorml;
 const getApiBase = () => {
   try {
@@ -33,6 +33,28 @@ const getApiBase = () => {
 };
 
 const API_BASE = getApiBase();
+
+const fetchWithTimeout = async (url, options = {}, timeoutMs = 15000) => {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(id);
+    return response;
+  } catch (err) {
+    clearTimeout(id);
+    if (err.name === 'AbortError') {
+      throw new Error('Tempo limite esgotado. Verifique sua conexão com a internet.');
+    }
+    if (err.name === 'TypeError' || (err.message && err.message.includes('fetch'))) {
+      throw new Error('Falha na comunicação com o servidor. Verifique sua conexão.');
+    }
+    throw err;
+  }
+};
 
 function App() {
   // Estado de Autenticação
@@ -450,7 +472,7 @@ function App() {
   // REQUISIÇÕES DE API: USUÁRIO
   const fetchCitizenData = async () => {
     try {
-      const res = await fetch(`${API_BASE}/citizen/me`, {
+      const res = await fetchWithTimeout(`${API_BASE}/citizen/me`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await parseApiResponse(res);
@@ -473,26 +495,26 @@ function App() {
         localStorage.removeItem('ilc_avatar_url');
       }
     } catch (err) {
-      showToast('Falha de Dados', err.message, 'warning');
+      showToast('Falha de Dados', err.message || 'Não foi possível carregar os dados do cidadão.', 'warning');
     }
   };
 
   const fetchCitizenAuditLogs = async () => {
     try {
-      const res = await fetch(`${API_BASE}/citizen/audit-logs`, {
+      const res = await fetchWithTimeout(`${API_BASE}/citizen/audit-logs`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
       setCitizenAuditLogs(data);
     } catch (err) {
-      showToast('Erro de Auditoria', err.message, 'warning');
+      showToast('Erro de Auditoria', err.message || 'Não foi possível carregar o histórico.', 'warning');
     }
   };
 
   const fetchCivicOverview = async () => {
     try {
-      const res = await fetch(`${API_BASE}/civic-overview`, {
+      const res = await fetchWithTimeout(`${API_BASE}/civic-overview`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await parseApiResponse(res);
@@ -503,21 +525,21 @@ function App() {
         setCivicSelectedUsers(data.citizens.map(c => c.id));
       }
     } catch (err) {
-      showToast('Erro na Visão Cívica', err.message, 'warning');
+      showToast('Erro na Visão Cívica', err.message || 'Falha ao carregar visão cívica.', 'warning');
     }
   };
 
   // REQUISIÇÕES: EVENTOS DA DEMOCRACIA
   const fetchDemocracyEvents = async () => {
     try {
-      const res = await fetch(`${API_BASE}/democracy-events`, {
+      const res = await fetchWithTimeout(`${API_BASE}/democracy-events`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
       setDemocracyEvents(data);
     } catch (err) {
-      showToast('Erro nos Eventos', err.message, 'warning');
+      showToast('Erro nos Eventos', err.message || 'Falha ao carregar a lista de eventos.', 'warning');
     }
   };
 
@@ -526,14 +548,14 @@ function App() {
     setSelectedEventParticipants([]);
     setParticipantsModalOpen(true);
     try {
-      const res = await fetch(`${API_BASE}/democracy-events/${ev.id}/participants`, {
+      const res = await fetchWithTimeout(`${API_BASE}/democracy-events/${ev.id}/participants`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
       setSelectedEventParticipants(data);
     } catch (err) {
-      showToast('Erro ao listar inscritos', err.message, 'warning');
+      showToast('Erro ao listar inscritos', err.message || 'Falha ao buscar inscritos.', 'warning');
     }
   };
 
@@ -560,7 +582,7 @@ function App() {
     e.preventDefault();
     setWahaSending(true);
     try {
-      const res = await fetch(`${API_BASE}/democracy-events/${wahaEvent.id}/send-webhook`, {
+      const res = await fetchWithTimeout(`${API_BASE}/democracy-events/${wahaEvent.id}/send-webhook`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -577,7 +599,7 @@ function App() {
       showToast('📲 WhatsApp Enviado', data.message, 'success');
       setWahaModalOpen(false);
     } catch (err) {
-      showToast('Erro ao Enviar WhatsApp', err.message, 'warning');
+      showToast('Erro ao Enviar WhatsApp', err.message || 'Falha na notificação via WhatsApp.', 'warning');
     } finally {
       setWahaSending(false);
     }
@@ -625,7 +647,7 @@ function App() {
         ? `${API_BASE}/democracy-events/${editingEvent.id}`
         : `${API_BASE}/democracy-events`;
 
-      const res = await fetch(url, {
+      const res = await fetchWithTimeout(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
@@ -649,14 +671,14 @@ function App() {
       resetEventForm();
       fetchDemocracyEvents();
     } catch (err) {
-      showToast('Erro', err.message, 'warning');
+      showToast('Erro', err.message || 'Falha ao salvar evento.', 'warning');
     }
   };
 
   const handleDeleteEvent = async (eventId) => {
     if (!window.confirm('Tem certeza que deseja excluir este evento?')) return;
     try {
-      const res = await fetch(`${API_BASE}/democracy-events/${eventId}`, {
+      const res = await fetchWithTimeout(`${API_BASE}/democracy-events/${eventId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -665,13 +687,13 @@ function App() {
       showToast('Evento Excluído', data.message, 'success');
       fetchDemocracyEvents();
     } catch (err) {
-      showToast('Erro ao Excluir', err.message, 'warning');
+      showToast('Erro ao Excluir', err.message || 'Falha ao excluir evento.', 'warning');
     }
   };
 
   const handleRegisterEvent = async (eventId) => {
     try {
-      const res = await fetch(`${API_BASE}/democracy-events/${eventId}/register`, {
+      const res = await fetchWithTimeout(`${API_BASE}/democracy-events/${eventId}/register`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -680,14 +702,14 @@ function App() {
       showToast('Inscrição', data.message, 'success');
       fetchDemocracyEvents();
     } catch (err) {
-      showToast('Erro de Inscrição', err.message, 'warning');
+      showToast('Erro de Inscrição', err.message || 'Falha ao alterar inscrição no evento.', 'warning');
     }
   };
 
   const handleUpdateProfile = async (e) => {
     if (e) e.preventDefault();
     try {
-      const res = await fetch(`${API_BASE}/citizen/update-profile`, {
+      const res = await fetchWithTimeout(`${API_BASE}/citizen/update-profile`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -815,21 +837,21 @@ function App() {
   // REQUISIÇÕES DE API: ADMIN
   const fetchAdminMetrics = async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/metrics`, {
+      const res = await fetchWithTimeout(`${API_BASE}/admin/metrics`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
       setAdminMetrics(data);
     } catch (err) {
-      showToast('Erro de Métricas', err.message, 'warning');
+      showToast('Erro de Métricas', err.message || 'Falha ao carregar métricas administrativas.', 'warning');
     }
   };
 
   const fetchAdminCitizens = async () => {
     try {
       const url = `${API_BASE}/admin/citizens?search=${adminSearch}&status=${adminFilterStatus}&tier=${adminFilterTier}&page=${adminPage}&limit=${adminLimit}`;
-      const res = await fetch(url, {
+      const res = await fetchWithTimeout(url, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await parseApiResponse(res);
@@ -838,26 +860,26 @@ function App() {
       setAdminTiers(data.tiers);
       setAdminTotalCitizens(data.total);
     } catch (err) {
-      showToast('Erro de Tabela', err.message, 'warning');
+      showToast('Erro de Tabela', err.message || 'Falha ao carregar a lista de cidadãos.', 'warning');
     }
   };
 
   const fetchCitizenDetail = async (id) => {
     try {
-      const res = await fetch(`${API_BASE}/admin/citizens/${id}`, {
+      const res = await fetchWithTimeout(`${API_BASE}/admin/citizens/${id}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
       setDetailCitizenData(data);
     } catch (err) {
-      showToast('Erro de Detalhe', err.message, 'warning');
+      showToast('Erro de Detalhe', err.message || 'Falha ao carregar detalhes do cidadão.', 'warning');
     }
   };
 
   const fetchEventTypes = async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/event-types`, {
+      const res = await fetchWithTimeout(`${API_BASE}/admin/event-types`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await parseApiResponse(res);
@@ -869,7 +891,7 @@ function App() {
 
   const fetchCertificates = async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/certificates`, {
+      const res = await fetchWithTimeout(`${API_BASE}/admin/certificates`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await parseApiResponse(res);
@@ -881,14 +903,14 @@ function App() {
 
   const fetchAdminAuditLogs = async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/audit-logs`, {
+      const res = await fetchWithTimeout(`${API_BASE}/admin/audit-logs`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await parseApiResponse(res);
       if (!res.ok) throw new Error(data.error);
       setAuditLogs(data);
     } catch (err) {
-      showToast('Erro de Auditoria', err.message, 'warning');
+      showToast('Erro de Auditoria', err.message || 'Falha ao carregar logs do sistema.', 'warning');
     }
   };
 
@@ -901,7 +923,7 @@ function App() {
     }
 
     try {
-      const res = await fetch(`${API_BASE}/admin/events`, {
+      const res = await fetchWithTimeout(`${API_BASE}/admin/events`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -923,14 +945,14 @@ function App() {
       setQuickEvidence('');
       fetchAdminMetrics();
     } catch (err) {
-      showToast('Erro de Lançamento', err.message, 'warning');
+      showToast('Erro de Lançamento', err.message || 'Falha ao lançar evento.', 'warning');
     }
   };
 
   const handleAdminCreateUser = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`${API_BASE}/admin/citizens`, {
+      const res = await fetchWithTimeout(`${API_BASE}/admin/citizens`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -959,7 +981,7 @@ function App() {
       fetchAdminMetrics();
       fetchAdminCitizens();
     } catch (err) {
-      showToast('Falha ao Criar Usuário', err.message, 'warning');
+      showToast('Falha ao Criar Usuário', err.message || 'Erro ao registrar cidadão.', 'warning');
     }
   };
 
@@ -980,7 +1002,7 @@ function App() {
     e.preventDefault();
     if (!editingUserData) return;
     try {
-      const res = await fetch(`${API_BASE}/admin/citizens/${editingUserData.id}`, {
+      const res = await fetchWithTimeout(`${API_BASE}/admin/citizens/${editingUserData.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -1005,14 +1027,14 @@ function App() {
       fetchAdminCitizens();
       if (detailCitizenId === editingUserData.id) fetchCitizenDetail(editingUserData.id);
     } catch (err) {
-      showToast('Erro ao Editar Usuário', err.message, 'warning');
+      showToast('Erro ao Editar Usuário', err.message || 'Falha ao atualizar dados.', 'warning');
     }
   };
 
   const changeCitizenStatus = async (status) => {
     if (!detailCitizenData) return;
     try {
-      const res = await fetch(`${API_BASE}/admin/citizens/${detailCitizenData.citizen.id}/status`, {
+      const res = await fetchWithTimeout(`${API_BASE}/admin/citizens/${detailCitizenData.citizen.id}/status`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1026,14 +1048,14 @@ function App() {
       showToast('Status Alterado', data.message, 'success');
       fetchCitizenDetail(detailCitizenData.citizen.id);
     } catch (err) {
-      showToast('Erro ao Mudar Status', err.message, 'warning');
+      showToast('Erro ao Mudar Status', err.message || 'Falha ao alterar status.', 'warning');
     }
   };
 
   const handleGrantManualCertificate = async () => {
     if (!detailCitizenData || !detailCertId) return;
     try {
-      const res = await fetch(`${API_BASE}/admin/certificates/grant`, {
+      const res = await fetchWithTimeout(`${API_BASE}/admin/certificates/grant`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1051,13 +1073,13 @@ function App() {
       setDetailCertId('');
       fetchCitizenDetail(detailCitizenData.citizen.id);
     } catch (err) {
-      showToast('Erro de Outorga', err.message, 'warning');
+      showToast('Erro de Outorga', err.message || 'Falha ao outorgar certificado.', 'warning');
     }
   };
 
   const resolvePendingEvent = async (eventId, action) => {
     try {
-      const res = await fetch(`${API_BASE}/admin/events/${eventId}/resolve`, {
+      const res = await fetchWithTimeout(`${API_BASE}/admin/events/${eventId}/resolve`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1071,7 +1093,7 @@ function App() {
       showToast('Evento Homologado', data.message, 'success');
       fetchAdminMetrics();
     } catch (err) {
-      showToast('Falha na Resolução', err.message, 'warning');
+      showToast('Falha na Resolução', err.message || 'Erro ao processar resolução.', 'warning');
     }
   };
 
@@ -1079,7 +1101,7 @@ function App() {
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`${API_BASE}/auth/login`, {
+      const res = await fetchWithTimeout(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier: loginId, password: loginPass })
@@ -1090,14 +1112,14 @@ function App() {
       saveSession(data.token, data.role, data.username, data.hierarchy_title, data.avatar_url);
       showToast('Identidade Confirmada', 'Acesso concedido aos arquivos estatais.', 'success');
     } catch (err) {
-      showToast('Erro de Login', err.message, 'warning');
+      showToast('Erro de Login', err.message || 'Credenciais inválidas ou erro de conexão.', 'warning');
     }
   };
 
   const handleRegisterSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`${API_BASE}/auth/register`, {
+      const res = await fetchWithTimeout(`${API_BASE}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1113,7 +1135,7 @@ function App() {
       saveSession(data.token, data.role, data.username, data.hierarchy_title, data.avatar_url);
       showToast('Registro Concluído', 'Sua lealdade cívica começa com 5.000 pontos.', 'success');
     } catch (err) {
-      showToast('Falha no Cadastro', err.message, 'warning');
+      showToast('Falha no Cadastro', err.message || 'Erro ao realizar registro.', 'warning');
     }
   };
 
@@ -1126,7 +1148,7 @@ function App() {
 
     setResetLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/forgot-password`, {
+      const res = await fetchWithTimeout(`${API_BASE}/auth/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier: forgotIdentifier })
@@ -1140,7 +1162,7 @@ function App() {
       }
       setForgotStep(2);
     } catch (err) {
-      showToast('Erro de Recuperação', err.message, 'warning');
+      showToast('Erro de Recuperação', err.message || 'Falha ao solicitar código.', 'warning');
     } finally {
       setResetLoading(false);
     }
@@ -1165,7 +1187,7 @@ function App() {
 
     setResetLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/reset-password`, {
+      const res = await fetchWithTimeout(`${API_BASE}/auth/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1186,21 +1208,24 @@ function App() {
       setNewPassword('');
       setConfirmPassword('');
     } catch (err) {
-      showToast('Erro ao Alterar Senha', err.message, 'warning');
+      showToast('Erro ao Alterar Senha', err.message || 'Falha ao redefinir senha.', 'warning');
     } finally {
       setResetLoading(false);
     }
   };
 
   const triggerGoogleSignup = () => {
-    window.location.href = '/api/auth/google';
+    const authUrl = API_BASE.startsWith('http')
+      ? `${API_BASE}/auth/google`
+      : `${window.location.origin}${API_BASE.replace(/\/$/, '')}/auth/google`;
+    window.location.href = authUrl;
   };
 
   const handleGoogleSignupSubmit = async (e) => {
     e.preventDefault();
     if (!googleNickname) return;
     try {
-      const res = await fetch(`${API_BASE}/auth/google-signup`, {
+      const res = await fetchWithTimeout(`${API_BASE}/auth/google-signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1559,7 +1584,7 @@ function App() {
       {/* Cabeçalho oficial */}
       <header className="main-header">
         <div className="header-identity">
-          <img src={logoImg} alt="Logo ILC" className="header-logo" />
+          <img src={logoImg} alt="Logo ILC" className="header-logo" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
           <div className="header-titles">
             <h1>ESTADO SOBERANO DA DEMOCRACIA GERENCIADA</h1>
             <h2>SISTEMA OFICIAL DE LEALDADE (ILC)</h2>
@@ -1568,10 +1593,21 @@ function App() {
 
         <div className="header-user-info">
           {activeAvatar ? (
-            <img src={activeAvatar} alt="Foto Perfil" className="header-user-avatar" />
-          ) : (
-            <div className="header-avatar-placeholder">{username ? username.charAt(0).toUpperCase() : 'U'}</div>
-          )}
+            <img
+              src={activeAvatar}
+              alt="Foto Perfil"
+              className="header-user-avatar"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+                if (e.currentTarget.nextElementSibling) {
+                  e.currentTarget.nextElementSibling.style.display = 'flex';
+                }
+              }}
+            />
+          ) : null}
+          <div className="header-avatar-placeholder" style={{ display: activeAvatar ? 'none' : 'flex' }}>
+            {username ? username.charAt(0).toUpperCase() : 'U'}
+          </div>
           <div className="user-meta">
             <span className="session-name">@{username}</span>
             <span className="hierarchy-pill">{activeHierarchyTitle}</span>
@@ -1628,14 +1664,23 @@ function App() {
                     <div className="card-photo-container">
                       <div className="card-photo-box">
                         {activeAvatar ? (
-                          <img src={activeAvatar} alt="Foto da Carteira" className="cit-id-photo" />
-                        ) : (
-                          <div className="cit-avatar-placeholder">
-                            <svg viewBox="0 0 24 24" width="48" height="48" fill="#B08A47">
-                              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-                            </svg>
-                          </div>
-                        )}
+                          <img
+                            src={activeAvatar}
+                            alt="Foto da Carteira"
+                            className="cit-id-photo"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                              if (e.currentTarget.nextElementSibling) {
+                                e.currentTarget.nextElementSibling.style.display = 'flex';
+                              }
+                            }}
+                          />
+                        ) : null}
+                        <div className="cit-avatar-placeholder" style={{ display: activeAvatar ? 'none' : 'flex' }}>
+                          <svg viewBox="0 0 24 24" width="48" height="48" fill="#B08A47">
+                            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                          </svg>
+                        </div>
                       </div>
                       <button className="change-photo-btn" onClick={() => setPhotoModalOpen(true)}>
                         📷 Alterar Foto da Carteira
@@ -1678,7 +1723,7 @@ function App() {
                     return (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 0', borderTop: '1px solid var(--border-light)', marginTop: '8px' }}>
                         <div className="rank-emblem-box">
-                          <img src={rank.logo} alt="Insígnia de Ranking" className="rank-emblem-img" />
+                          <img src={rank.logo} alt="Insígnia de Ranking" className="rank-emblem-img" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                           <span style={{ fontSize: '9px', color: 'var(--gold)', fontFamily: 'var(--font-ui)', fontWeight: 700, letterSpacing: '0.5px', marginTop: '4px', textAlign: 'center' }}>RANKING</span>
                         </div>
                         <div style={{ flex: 1 }}>
@@ -2603,7 +2648,7 @@ function App() {
                 </div>
 
                 {/* ===== LINHA INFERIOR: Últimos Eventos + Próximos Eventos ===== */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                <div className="cv-bottom-grid">
 
                   {/* Últimos Eventos de Score */}
                   <div className="bento-card">
@@ -2620,12 +2665,20 @@ function App() {
                           <div key={ev.id} className="cv-feed-item">
                             <div className="cv-feed-avatar">
                               {ev.avatar_url ? (
-                                <img src={ev.avatar_url} alt={ev.username} />
-                              ) : (
-                                <div className="cv-feed-avatar-fallback">
-                                  {ev.username.charAt(0).toUpperCase()}
-                                </div>
-                              )}
+                                <img
+                                  src={ev.avatar_url}
+                                  alt={ev.username}
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                    if (e.currentTarget.nextElementSibling) {
+                                      e.currentTarget.nextElementSibling.style.display = 'flex';
+                                    }
+                                  }}
+                                />
+                              ) : null}
+                              <div className="cv-feed-avatar-fallback" style={{ display: ev.avatar_url ? 'none' : 'flex' }}>
+                                {ev.username ? ev.username.charAt(0).toUpperCase() : 'U'}
+                              </div>
                             </div>
                             <div className="cv-feed-info">
                               <span className="cv-feed-user">@{ev.username}</span>
@@ -2682,14 +2735,14 @@ function App() {
                                   style={{ fontSize: '11px', padding: '6px 12px', whiteSpace: 'nowrap' }}
                                   onClick={async () => {
                                     try {
-                                      const res = await fetch(`${API_BASE}/democracy-events/${ev.id}/register`, {
+                                      const res = await fetchWithTimeout(`${API_BASE}/democracy-events/${ev.id}/register`, {
                                         method: 'POST',
                                         headers: { 'Authorization': `Bearer ${token}` }
                                       });
-                                      const data = await res.json();
+                                      const data = await parseApiResponse(res);
                                       if (res.ok) { showToast('Inscrição', data.message, 'success'); fetchCivicOverview(); }
-                                      else showToast('Erro', data.error, 'warning');
-                                    } catch { showToast('Erro de rede', 'Tente novamente.', 'warning'); }
+                                      else showToast('Erro', data.error || 'Falha na inscrição.', 'warning');
+                                    } catch (err) { showToast('Erro de rede', err.message || 'Tente novamente.', 'warning'); }
                                   }}
                                 >
                                   {ev.is_registered ? 'CANCELAR' : 'INSCREVER'}

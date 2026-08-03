@@ -2101,6 +2101,18 @@ button, input, select, textarea, a, .nav-tab, .sim-btn, .auth-tab {
   text-transform: uppercase;
 }
 
+.cv-bottom-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 768px) {
+  .cv-bottom-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Feed de eventos recentes */
 .cv-events-feed {
   display: flex;
