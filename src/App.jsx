@@ -1215,9 +1215,11 @@ function App() {
   };
 
   const triggerGoogleSignup = () => {
-    const authUrl = API_BASE.startsWith('http')
+    const origin = window.location.origin;
+    const baseAuthUrl = API_BASE.startsWith('http')
       ? `${API_BASE}/auth/google`
-      : `${window.location.origin}${API_BASE.replace(/\/$/, '')}/auth/google`;
+      : `${origin}${API_BASE.replace(/\/$/, '')}/auth/google`;
+    const authUrl = `${baseAuthUrl}?origin=${encodeURIComponent(origin)}`;
     window.location.href = authUrl;
   };
 

@@ -88,14 +88,34 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   }));
 
   // Iniciar fluxo OAuth — redireciona para o Google
-  app.get('/api/auth/google', passport.authenticate('google', {
-    scope: ['profile', 'email']
-  }));
+  app.get('/api/auth/google', (req, res, next) => {
+    const origin = req.query.origin || req.headers.referer || '';
+    if (origin && req.session) {
+      req.session.clientOrigin = origin;
+    }
+    passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
+  });
 
   function getSafeAvatarForToken(avatarUrl) {
     if (!avatarUrl) return null;
     if (typeof avatarUrl === 'string' && avatarUrl.startsWith('data:')) return null;
     return avatarUrl;
+  }
+
+  function getRedirectTarget(req, queryString) {
+    let clientOrigin = (req.session && req.session.clientOrigin) ? req.session.clientOrigin : '';
+    if (clientOrigin) {
+      try {
+        const u = new URL(clientOrigin);
+        clientOrigin = u.origin;
+      } catch (_) {
+        clientOrigin = clientOrigin.replace(/\/$/, '');
+      }
+      if (clientOrigin.includes('/api/auth')) {
+        clientOrigin = '';
+      }
+    }
+    return clientOrigin ? `${clientOrigin}/?${queryString}` : `/?${queryString}`;
   }
 
   // Callback do Google após autenticação
@@ -137,7 +157,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
         
         const titleParam = encodeURIComponent(userTitle);
         const avatarParam = safeAvatar ? `&google_avatar=${encodeURIComponent(safeAvatar)}` : '';
-        return res.redirect(`/?google_token=${token}&google_role=${user.role}&google_username=${encodeURIComponent(user.username)}&google_title=${titleParam}${avatarParam}`);
+        return res.redirect(getRedirectTarget(req, `google_token=${token}&google_role=${user.role}&google_username=${encodeURIComponent(user.username)}&google_title=${titleParam}${avatarParam}`));
       }
 
       // Verificar se e-mail já existe em outra conta
@@ -145,7 +165,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
         const emailCheck = await client.query('SELECT id FROM users WHERE email = $1 AND google_id IS NULL', [email]);
         if (emailCheck.rows.length > 0) {
           await client.query('ROLLBACK');
-          return res.redirect('/?google_error=email_exists');
+          return res.redirect(getRedirectTarget(req, 'google_error=email_exists'));
         }
       }
 
@@ -153,11 +173,11 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       await client.query('COMMIT');
       const safeAvatar = getSafeAvatarForToken(avatar_url);
       const tempToken = jwt.sign({ google_id, email, avatar_url: safeAvatar, needs_nickname: true }, JWT_SECRET, { expiresIn: '15m' });
-      return res.redirect(`/?google_new=1&google_temp=${tempToken}`);
+      return res.redirect(getRedirectTarget(req, `google_new=1&google_temp=${tempToken}`));
     } catch (err) {
       await client.query('ROLLBACK');
       console.error('❌ Erro interno no handleGoogleCallback:', err);
-      return res.redirect('/?google_error=server');
+      return res.redirect(getRedirectTarget(req, 'google_error=server'));
     } finally {
       client.release();
     }
@@ -173,12 +193,12 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
             data: err.oauthError.data ? err.oauthError.data.toString() : null
           });
         }
-        return res.redirect('/?google_error=server');
+        return res.redirect(getRedirectTarget(req, 'google_error=server'));
       }
 
       if (!user) {
         console.warn('⚠️ OAuth callback: no user returned from passport. Info:', info);
-        return res.redirect('/?google_error=1');
+        return res.redirect(getRedirectTarget(req, 'google_error=1'));
       }
 
       req.user = user;
@@ -186,7 +206,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
         await handleGoogleCallback(req, res);
       } catch (handlerErr) {
         console.error('❌ Error handling Google callback:', handlerErr);
-        return res.redirect('/?google_error=server');
+        return res.redirect(getRedirectTarget(req, 'google_error=server'));
       }
     })(req, res, next);
   });
