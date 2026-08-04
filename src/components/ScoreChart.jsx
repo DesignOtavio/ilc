@@ -4,7 +4,11 @@ const parseTime = (dateVal) => {
   if (!dateVal) return 0;
   if (typeof dateVal === 'number') return dateVal;
   if (typeof dateVal === 'string') {
-    const isoLike = dateVal.trim().replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:?\d{2}?)*/, '$1T$2');
+    const trimmed = dateVal.trim();
+    if (!trimmed) return 0;
+    const isoLike = trimmed.includes(' ') && !trimmed.includes('T')
+      ? trimmed.replace(' ', 'T')
+      : trimmed;
     const dt = new Date(isoLike);
     if (!isNaN(dt.getTime())) return dt.getTime();
   }
@@ -30,13 +34,19 @@ const ScoreChart = ({ history = [], currentScore = 5000 }) => {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
 
-    const rect = canvas.parentNode.getBoundingClientRect();
-    canvas.width = rect.width || 400;
-    canvas.height = 180;
+    const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+    const parent = canvas.parentNode;
+    const rect = parent ? parent.getBoundingClientRect() : { width: 400 };
+    const width = rect.width || 400;
+    const height = 180;
 
-    const width = canvas.width;
-    const height = canvas.height;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
 
+    ctx.save();
+    ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, width, height);
 
     // Filtrar eventos aprovados e ordenar cronologicamente (do mais antigo para o mais recente)
@@ -138,6 +148,7 @@ const ScoreChart = ({ history = [], currentScore = 5000 }) => {
       ctx.lineWidth = 1;
       ctx.stroke();
     }
+    ctx.restore();
   };
 
   return <canvas ref={canvasRef} style={{ width: '100%', display: 'block' }}></canvas>;

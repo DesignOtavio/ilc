@@ -53,7 +53,10 @@ export const parseSafeDate = (dateVal) => {
   if (typeof dateVal === 'number') return new Date(dateVal);
   if (typeof dateVal === 'string') {
     const trimmed = dateVal.trim();
-    const isoLike = trimmed.replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:?\d{2}?)*/, '$1T$2');
+    if (!trimmed) return null;
+    const isoLike = trimmed.includes(' ') && !trimmed.includes('T')
+      ? trimmed.replace(' ', 'T')
+      : trimmed;
     const dt = new Date(isoLike);
     if (!isNaN(dt.getTime())) return dt;
     const fallback = new Date(trimmed);
@@ -65,16 +68,18 @@ export const parseSafeDate = (dateVal) => {
 const getApiBase = () => {
   try {
     if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_BASE_URL) {
-      return import.meta.env.VITE_API_BASE_URL.replace(/\/$/, '') + '/api';
+      const base = import.meta.env.VITE_API_BASE_URL.replace(/\/$/, '');
+      return base.endsWith('/api') ? base : base + '/api';
     }
     const custom = safeStorage.getItem('ilc_server_url');
     if (custom) {
-      return custom.replace(/\/$/, '') + '/api';
+      const base = custom.replace(/\/$/, '');
+      return base.endsWith('/api') ? base : base + '/api';
     }
-    if (typeof window !== 'undefined' && window.location && window.location.origin) {
+    if (typeof window !== 'undefined' && window.location) {
       const proto = window.location.protocol;
-      if (proto === 'http:' || proto === 'https:') {
-        return window.location.origin.replace(/\/$/, '') + '/api';
+      if (proto === 'capacitor:' || proto === 'file:') {
+        return 'http://10.0.2.2:3000/api';
       }
     }
   } catch (err) {
@@ -86,22 +91,21 @@ const getApiBase = () => {
 const API_BASE = getApiBase();
 
 const fetchWithTimeout = async (url, options = {}, timeoutMs = 15000) => {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
+  const { headers = {}, ...restOptions } = options;
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   try {
     const response = await fetch(url, {
-      ...options,
+      ...restOptions,
       headers: {
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache',
-        ...(options.headers || {})
+        ...headers
       },
-      signal: controller.signal
+      ...(controller ? { signal: controller.signal } : {})
     });
-    clearTimeout(id);
+    if (timeoutId) clearTimeout(timeoutId);
     return response;
   } catch (err) {
-    clearTimeout(id);
+    if (timeoutId) clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
       throw new Error('Tempo limite esgotado. Verifique sua conexão com a internet.');
     }
@@ -793,18 +797,18 @@ function App() {
       // BUGFIX: sempre sincronizar username, título e avatar — inclusive null
       if (data.nickname) {
         setUsername(data.nickname);
-        localStorage.setItem('ilc_username', data.nickname);
+        safeStorage.setItem('ilc_username', data.nickname);
       }
       if (data.hierarchy_title) {
         setUserHierarchyTitle(data.hierarchy_title);
-        localStorage.setItem('ilc_hierarchy_title', data.hierarchy_title);
+        safeStorage.setItem('ilc_hierarchy_title', data.hierarchy_title);
       }
-      // Avatar: atualizar estado e localStorage independente de ser null ou string
+      // Avatar: atualizar estado e safeStorage independente de ser null ou string
       setUserAvatarUrl(data.avatar_url || null);
       if (data.avatar_url) {
-        localStorage.setItem('ilc_avatar_url', data.avatar_url);
+        safeStorage.setItem('ilc_avatar_url', data.avatar_url);
       } else {
-        localStorage.removeItem('ilc_avatar_url');
+        safeStorage.removeItem('ilc_avatar_url');
       }
 
       showToast('Carteira de Identidade Atualizada', data.message, 'success');
@@ -1320,12 +1324,12 @@ function App() {
     setUserHierarchyTitle(resolvedTitle);
     setUserAvatarUrl(avatar || null);
 
-    localStorage.setItem('ilc_token', tok);
-    localStorage.setItem('ilc_role', role);
-    localStorage.setItem('ilc_username', user);
-    localStorage.setItem('ilc_hierarchy_title', resolvedTitle);
-    if (avatar) localStorage.setItem('ilc_avatar_url', avatar);
-    else localStorage.removeItem('ilc_avatar_url');
+    safeStorage.setItem('ilc_token', tok);
+    safeStorage.setItem('ilc_role', role);
+    safeStorage.setItem('ilc_username', user);
+    safeStorage.setItem('ilc_hierarchy_title', resolvedTitle);
+    if (avatar) safeStorage.setItem('ilc_avatar_url', avatar);
+    else safeStorage.removeItem('ilc_avatar_url');
   };
 
   const handleLogout = () => {
@@ -1337,7 +1341,7 @@ function App() {
     setCitizenData(null);
     setAdminMetrics(null);
     setDetailCitizenId(null);
-    localStorage.clear();
+    safeStorage.clear();
     showToast('Sessão Encerrada', 'Retirada segura dos canais cívicos.', 'info');
   };
 

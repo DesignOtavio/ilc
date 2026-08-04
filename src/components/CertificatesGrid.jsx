@@ -3,7 +3,11 @@ import React from 'react';
 const parseSafeCertDate = (dateVal) => {
   if (!dateVal) return new Date().toLocaleDateString('pt-BR');
   if (typeof dateVal === 'string') {
-    const isoLike = dateVal.trim().replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:?\d{2}?)*/, '$1T$2');
+    const trimmed = dateVal.trim();
+    if (!trimmed) return '—';
+    const isoLike = trimmed.includes(' ') && !trimmed.includes('T')
+      ? trimmed.replace(' ', 'T')
+      : trimmed;
     const dt = new Date(isoLike);
     if (!isNaN(dt.getTime())) return dt.toLocaleDateString('pt-BR');
   }
