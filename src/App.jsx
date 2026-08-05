@@ -701,9 +701,10 @@ function App() {
     setNewEventTitle(ev.title);
     setNewEventDescription(ev.description || '');
     setNewEventLocation(ev.location || '');
-    // Formatar para datetime-local input
+    // Formatar para datetime-local input (exibe no horário local armazenado)
     const dt = new Date(ev.event_date);
-    const local = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const pad = (n) => String(n).padStart(2, '0');
+    const local = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
     setNewEventDate(local);
     setNewEventCategory(ev.category || 'cívico');
     setNewEventStatus(ev.status || 'planejado');
@@ -735,7 +736,14 @@ function App() {
           title: newEventTitle,
           description: newEventDescription,
           location: newEventLocation,
-          event_date: newEventDate,
+          // Inclui o offset local para que o Postgres salve o horário exato digitado
+          event_date: (() => {
+            const offset = -new Date().getTimezoneOffset();
+            const sign = offset >= 0 ? '+' : '-';
+            const absH = String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0');
+            const absM = String(Math.abs(offset) % 60).padStart(2, '0');
+            return `${newEventDate}:00${sign}${absH}:${absM}`;
+          })(),
           category: newEventCategory,
           status: newEventStatus,
           max_participants: newEventMaxParticipants ? parseInt(newEventMaxParticipants) : null,
