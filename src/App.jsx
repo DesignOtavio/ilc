@@ -305,6 +305,14 @@ function App() {
       return { error: msg };
     }
 
+    // Erro 431: cabeçalho JWT muito grande (avatar base64 embutido no token antigo)
+    // Forçar logout para que o usuário receba um token novo e menor ao logar novamente
+    if (res.status === 431) {
+      const msg = 'Sua sessão está desatualizada. Faça login novamente para continuar.';
+      forceLogout(msg);
+      return { error: msg };
+    }
+
     const text = await res.text();
     if (!text) {
       return { error: res.ok ? 'Resposta vazia do servidor.' : `Servidor respondeu sem detalhes (${res.status}).` };

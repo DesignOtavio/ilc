@@ -562,9 +562,9 @@ app.post('/api/auth/register', async (req, res) => {
 
     await client.query('COMMIT');
 
-    // Gerar Token
+    // Gerar Token (avatar_url excluído do payload JWT para evitar tokens gigantes)
     const token = jwt.sign(
-      { id: userId, username, email, role: 'usuario', hierarchy_title: defaultTitle, avatar_url: null },
+      { id: userId, username, email, role: 'usuario', hierarchy_title: defaultTitle },
       JWT_SECRET,
       { expiresIn: '8h' }
     );
@@ -624,7 +624,7 @@ app.post('/api/auth/google-signup', async (req, res) => {
     if (userRes.rows.length > 0) {
       const user = userRes.rows[0];
       const token = jwt.sign(
-        { id: user.id, username: user.username, role: user.role, hierarchy_title: user.hierarchy_title || 'Usuário', avatar_url: user.avatar_url },
+        { id: user.id, username: user.username, role: user.role, hierarchy_title: user.hierarchy_title || 'Usuário' },
         JWT_SECRET,
         { expiresIn: '8h' }
       );
@@ -670,7 +670,7 @@ app.post('/api/auth/google-signup', async (req, res) => {
     await client.query('COMMIT');
 
     const token = jwt.sign(
-      { id: userId, username, role: 'usuario', hierarchy_title: defaultTitle, avatar_url: avatar_url || null },
+      { id: userId, username, role: 'usuario', hierarchy_title: defaultTitle },
       JWT_SECRET,
       { expiresIn: '8h' }
     );
@@ -724,8 +724,9 @@ app.post('/api/auth/login', async (req, res) => {
     const userRole = user.role_name === 'admin' ? 'admin' : 'usuario';
     const hierarchyTitle = user.hierarchy_title || (userRole === 'admin' ? 'Administrador do Sistema' : 'Usuário Cívico');
 
+    // avatar_url excluído do payload JWT — previne erro 431 (header too large) com avatares base64
     const token = jwt.sign(
-      { id: user.id, username: user.username, email: user.email, role: userRole, hierarchy_title: hierarchyTitle, avatar_url: user.avatar_url },
+      { id: user.id, username: user.username, email: user.email, role: userRole, hierarchy_title: hierarchyTitle },
       JWT_SECRET,
       { expiresIn: '8h' }
     );
@@ -2058,7 +2059,10 @@ app.get('*', (req, res) => {
 });
 
 // Iniciar Servidor
+// maxHeaderSize aumentado para 64KB para evitar erro 431 com tokens JWT legados ou cabeçalhos grandes
+const http = require('http');
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const server = http.createServer({ maxHeaderSize: 65536 }, app);
+server.listen(PORT, () => {
   console.log(`📡 Portal ILC rodando na porta http://localhost:${PORT}`);
 });
